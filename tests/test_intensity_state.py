@@ -13,6 +13,13 @@ from saxsabs.core.intensity_state import (
 )
 
 
+@pytest.mark.parametrize("unit", ["cm⁻¹", "cm−¹", "cm^-1", "1/cm"])
+def test_unicode_cm_inverse_unit_is_absolute(unit):
+    assessment = assess_intensity_state({"i_col": "I", "intensity_unit": unit})
+
+    assert assessment.state is IntensityState.ABSOLUTE_CM_INV
+
+
 def test_absolute_column_is_rejected_before_k_or_thickness_is_reapplied():
     profile = {"i_col": "I_abs_cm^-1", "operator_provenance": {}}
 

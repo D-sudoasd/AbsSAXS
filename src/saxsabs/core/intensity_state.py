@@ -72,7 +72,27 @@ class IntensityStateAssessment:
 
 
 def _normalized_token(value: object) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(value or "").strip().lower())
+    text = str(value or "").strip().lower().translate(
+        str.maketrans(
+            {
+                "⁰": "0",
+                "¹": "1",
+                "²": "2",
+                "³": "3",
+                "⁴": "4",
+                "⁵": "5",
+                "⁶": "6",
+                "⁷": "7",
+                "⁸": "8",
+                "⁹": "9",
+                "⁻": "-",
+                "−": "-",
+                "–": "-",
+                "—": "-",
+            }
+        )
+    )
+    return re.sub(r"[^a-z0-9]+", "", text)
 
 
 def _canonical_correction(value: object) -> str:
@@ -217,12 +237,12 @@ def assess_intensity_state(profile: Mapping[str, object]) -> IntensityStateAsses
         semantic_states.add(IntensityState.RAW_COUNTS)
         evidence.append(f"column:{profile.get('i_col')}")
 
-    unit = _normalized_token(
-        profile.get("intensity_unit", provenance.get("intensity_unit", ""))
+    raw_intensity_unit = profile.get(
+        "intensity_unit", provenance.get("intensity_unit", "")
     )
-    if is_cm_inv_intensity_unit(unit):
+    if is_cm_inv_intensity_unit(raw_intensity_unit):
         semantic_states.add(IntensityState.ABSOLUTE_CM_INV)
-        evidence.append(f"unit:{profile.get('intensity_unit', provenance.get('intensity_unit'))}")
+        evidence.append(f"unit:{raw_intensity_unit}")
 
     # ``corrections_applied`` is evidence about the physical state.  The
     # ``do_not_repeat`` ledger is an execution guard and may be stricter than

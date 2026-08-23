@@ -2,9 +2,10 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from saxsabs.cli import main
+from saxsabs.cli import _normalize_q_profile, _read_profile_for_estimate, main
 from saxsabs.workflows import bl19b2_abs2d
 
 
@@ -153,6 +154,233 @@ def test_cli_estimate_k_accepts_scattering_column_names_with_units(
     assert out["k_factor"] == pytest.approx(2.0, rel=1e-6)
 
 
+def test_cli_estimate_k_converts_nm_inverse_q_to_angstrom_inverse(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    meas = tmp_path / "meas_nm.csv"
+    ref = tmp_path / "ref_nm.csv"
+    meas.write_text(
+        "Q (nm⁻¹),I_rel\n0.10,17.1\n0.20,15.4\n0.50,13.4\n1.00,11.8\n",
+        encoding="utf-8",
+    )
+    ref.write_text(
+        "Q (nm⁻¹),I_rel\n0.10,34.2\n0.20,30.8\n0.50,26.8\n1.00,23.6\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "saxsabs",
+            "estimate-k",
+            "--meas",
+            str(meas),
+            "--ref",
+            str(ref),
+            "--intensity-state",
+            "relative",
+            "--qmin",
+            "0.01",
+            "--qmax",
+            "0.11",
+        ],
+    )
+
+    main()
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["k_factor"] == pytest.approx(2.0, rel=1e-6)
+    assert out["points_total"] == 4
+
+
+def test_cli_estimate_k_reuses_normalized_whitespace_header_columns(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    meas = tmp_path / "meas_plain_nm.dat"
+    ref = tmp_path / "ref_plain_nm.dat"
+    meas.write_text(
+        "Q (nm^-1) I\n0.10 17.1 0.1\n0.20 15.4 0.1\n0.50 13.4 0.1\n1.00 11.8 0.1\n",
+        encoding="utf-8",
+    )
+    ref.write_text(
+        "Q (nm^-1) I\n0.10 34.2 0.1\n0.20 30.8 0.1\n0.50 26.8 0.1\n1.00 23.6 0.1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "saxsabs",
+            "estimate-k",
+            "--meas",
+            str(meas),
+            "--ref",
+            str(ref),
+            "--q-col",
+            "Q (nm^-1)",
+            "--i-col",
+            "I",
+            "--ref-q-col",
+            "Q (nm^-1)",
+            "--ref-i-col",
+            "I",
+            "--intensity-state",
+            "relative",
+            "--qmin",
+            "0.01",
+            "--qmax",
+            "0.11",
+        ],
+    )
+
+    main()
+
+    full_header_out = json.loads(capsys.readouterr().out)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "saxsabs",
+            "estimate-k",
+            "--meas",
+            str(meas),
+            "--ref",
+            str(ref),
+            "--q-col",
+            "Q",
+            "--i-col",
+            "I",
+            "--ref-q-col",
+            "Q",
+            "--ref-i-col",
+            "I",
+            "--intensity-state",
+            "relative",
+            "--qmin",
+            "0.01",
+            "--qmax",
+            "0.11",
+        ],
+    )
+    main()
+
+    prefix_out = json.loads(capsys.readouterr().out)
+    assert full_header_out["k_factor"] == pytest.approx(2.0, rel=1e-6)
+    assert prefix_out["k_factor"] == pytest.approx(full_header_out["k_factor"], rel=1e-12)
+    assert prefix_out["points_total"] == full_header_out["points_total"] == 4
+
+
+def test_cli_parse_external1d_reports_q_unit(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    profile = tmp_path / "profile_nm.csv"
+    profile.write_text(
+        "Q (nm⁻¹),I\n0.1,10\n0.2,9\n0.3,8\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["saxsabs", "parse-external1d", "--input", str(profile)])
+
+    main()
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["x_unit"] == "nm^-1"
+
+
+def test_cli_estimate_k_rejects_chi_axis(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    meas = tmp_path / "meas_chi.csv"
+    ref = tmp_path / "ref.csv"
+    meas.write_text("chi_deg,I_rel\n1,17.1\n2,15.4\n3,13.4\n", encoding="utf-8")
+    ref.write_text("q,I_rel\n0.01,34.2\n0.02,30.8\n0.03,26.8\n", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "saxsabs",
+            "estimate-k",
+            "--meas",
+            str(meas),
+            "--ref",
+            str(ref),
+            "--intensity-state",
+            "relative",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 1
+    assert "chi" in capsys.readouterr().err.lower()
+
+
+def test_cli_q_normalization_is_shallow_and_idempotent():
+    profile = {
+        "x": [1.0, 2.0],
+        "x_col": "Q",
+        "x_unit": "nm^-1",
+        "operator_provenance": {},
+    }
+
+    converted = _normalize_q_profile(profile, profile_label="sample")
+    repeated = _normalize_q_profile(converted, profile_label="sample")
+
+    assert profile["x"] == [1.0, 2.0]
+    np.testing.assert_allclose(converted["x"], [0.1, 0.2])
+    np.testing.assert_allclose(repeated["x"], converted["x"])
+    assert converted["x_unit"] == repeated["x_unit"] == "A^-1"
+    assert converted["operator_provenance"]["q_unit_original"] == "nm^-1"
+    assert repeated["operator_provenance"]["q_unit_original"] == "nm^-1"
+    assert converted["operator_provenance"]["q_unit_conversion"] == "nm^-1_to_A^-1"
+    assert repeated["operator_provenance"]["q_unit_conversion"] == "nm^-1_to_A^-1"
+
+
+def test_cli_q_normalization_rejects_unknown_unit_with_explicit_override():
+    profile = {
+        "x": [1.0, 2.0],
+        "x_col": "Q (mm^-1)",
+        "x_unit": None,
+        "x_unit_raw": "mm^-1",
+        "x_axis_override": True,
+    }
+
+    with pytest.raises(ValueError, match="unsupported Q unit"):
+        _normalize_q_profile(profile, profile_label="sample")
+
+
+@pytest.mark.parametrize("header", ["Q (nm)", "Q (angstrom)", "Q (A)", "Q (Å)"])
+def test_cli_q_normalization_rejects_bare_length_unit_headers(header):
+    profile = {
+        "x": [1.0, 2.0],
+        "x_col": header,
+        "x_unit": "nm^-1" if "nm" in header else "A^-1",
+        "x_unit_raw": "",
+    }
+
+    with pytest.raises(ValueError, match="reciprocal length"):
+        _normalize_q_profile(profile, profile_label="sample")
+
+
+@pytest.mark.parametrize("header", ["Q (nm^-1)", "Q (Å⁻¹)", "Q (1/nm)"])
+def test_cli_q_normalization_accepts_explicit_reciprocal_unit_headers(header):
+    profile = {"x": [1.0, 2.0], "x_col": header, "x_unit": None, "x_unit_raw": ""}
+
+    converted = _normalize_q_profile(profile, profile_label="sample")
+
+    assert converted["x_unit"] == "A^-1"
+
+
 def test_cli_estimate_k_accepts_explicit_column_overrides(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -194,6 +422,335 @@ def test_cli_estimate_k_accepts_explicit_column_overrides(
     main()
     out = json.loads(capsys.readouterr().out)
     assert out["k_factor"] == pytest.approx(2.0, rel=1e-6)
+
+
+def test_cli_estimate_k_default_and_semantic_q_ref_override_have_same_policy(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    meas = tmp_path / "meas.csv"
+    ref = tmp_path / "ref.csv"
+    meas.write_text(
+        "q_ref,I_ref\n0.01,17.1\n0.02,15.4\n0.05,13.4\n0.10,11.8\n",
+        encoding="utf-8",
+    )
+    ref.write_text(
+        "q_ref,I_ref\n0.01,34.2\n0.02,30.8\n0.05,26.8\n0.10,23.6\n",
+        encoding="utf-8",
+    )
+    base_argv = [
+        "saxsabs",
+        "estimate-k",
+        "--meas",
+        str(meas),
+        "--ref",
+        str(ref),
+        "--intensity-state",
+        "relative",
+    ]
+
+    monkeypatch.setattr(sys, "argv", base_argv)
+    main()
+    default_out = json.loads(capsys.readouterr().out)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        base_argv
+        + [
+            "--q-col",
+            "q_ref",
+            "--i-col",
+            "I_ref",
+            "--ref-q-col",
+            "q_ref",
+            "--ref-i-col",
+            "I_ref",
+        ],
+    )
+    main()
+    override_out = json.loads(capsys.readouterr().out)
+
+    assert default_out["k_factor"] == pytest.approx(2.0, rel=1e-12)
+    assert override_out["k_factor"] == pytest.approx(default_out["k_factor"], rel=1e-12)
+    assert override_out["points_total"] == default_out["points_total"] == 4
+
+
+def test_cli_estimate_k_requires_explicit_selector_for_unsupported_intensity_header(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    meas = tmp_path / "meas_bad_intensity.csv"
+    ref = tmp_path / "ref_bad_intensity.csv"
+    meas.write_text(
+        "Q,id,foo\n0.01,101,10\n0.02,102,9\n0.05,103,8\n0.10,104,7\n",
+        encoding="utf-8",
+    )
+    ref.write_text(
+        "Q,id,foo\n0.01,201,30\n0.02,202,27\n0.05,203,24\n0.10,204,21\n",
+        encoding="utf-8",
+    )
+    base_argv = [
+        "saxsabs",
+        "estimate-k",
+        "--meas",
+        str(meas),
+        "--ref",
+        str(ref),
+        "--intensity-state",
+        "relative",
+    ]
+
+    monkeypatch.setattr(sys, "argv", base_argv)
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+    assert "numeric columns" in capsys.readouterr().err
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        base_argv
+        + [
+            "--q-col",
+            "Q",
+            "--i-col",
+            "foo",
+            "--ref-q-col",
+            "Q",
+            "--ref-i-col",
+            "foo",
+        ],
+    )
+    main()
+    explicit_out = json.loads(capsys.readouterr().out)
+    assert explicit_out["k_factor"] == pytest.approx(3.0, rel=1e-12)
+
+
+@pytest.mark.parametrize("comment_header", [False, True])
+def test_cli_normalizes_space_separated_q_unit_header(
+    tmp_path: Path,
+    comment_header: bool,
+):
+    profile_path = tmp_path / "space_q_unit.dat"
+    prefix = "# " if comment_header else ""
+    profile_path.write_text(
+        f"{prefix}Q 1/nm I\n0.10 10\n0.20 9\n0.30 8\n",
+        encoding="utf-8",
+    )
+
+    profile = _read_profile_for_estimate(
+        profile_path,
+        q_col=None,
+        i_col=None,
+        profile_label="sample",
+    )
+    normalized = _normalize_q_profile(profile, profile_label="sample")
+
+    np.testing.assert_allclose(normalized["x"], [0.01, 0.02, 0.03])
+
+
+@pytest.mark.parametrize("comment_header", [False, True])
+def test_cli_normalizes_quoted_q_unit_header(
+    tmp_path: Path,
+    comment_header: bool,
+):
+    profile_path = tmp_path / "quoted_q_unit.csv"
+    prefix = "# " if comment_header else ""
+    profile_path.write_text(
+        f'{prefix}"Q 1/nm",I\n1.0,100\n2.0,90\n3.0,80\n',
+        encoding="utf-8",
+    )
+
+    profile = _read_profile_for_estimate(
+        profile_path,
+        q_col=None,
+        i_col=None,
+        profile_label="sample",
+    )
+    normalized = _normalize_q_profile(profile, profile_label="sample")
+
+    np.testing.assert_allclose(normalized["x"], [0.1, 0.2, 0.3])
+
+
+def test_cli_explicit_selector_preserves_nan_error_column_width(tmp_path: Path):
+    profile_path = tmp_path / "explicit_nan_selector.csv"
+    profile_path.write_text(
+        '"Q 1/nm","I/cm","Error_CombinedStandard"\n'
+        "1.0,100,NaN\n2.0,90,NaN\n3.0,80,NaN\n",
+        encoding="utf-8",
+    )
+
+    profile = _read_profile_for_estimate(
+        profile_path,
+        q_col="Q 1/nm",
+        i_col="I/cm",
+        profile_label="sample",
+    )
+    normalized = _normalize_q_profile(profile, profile_label="sample")
+
+    np.testing.assert_allclose(normalized["x"], [0.1, 0.2, 0.3])
+    np.testing.assert_allclose(profile["intensity"], [100.0, 90.0, 80.0])
+    assert profile["err_col"] == "Error_CombinedStandard"
+    assert np.all(np.isnan(profile["uncertainty"]))
+
+
+@pytest.mark.parametrize("header", ["Q (nm^-1) [A^-1] I", "Q nm^-10 I"])
+def test_cli_rejects_invalid_space_separated_q_unit_header(
+    tmp_path: Path,
+    header: str,
+):
+    profile_path = tmp_path / "invalid_space_q_unit.dat"
+    profile_path.write_text(
+        f"{header}\n0.10 10\n0.20 9\n0.30 8\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported or malformed Q-unit header"):
+        _read_profile_for_estimate(
+            profile_path,
+            q_col=None,
+            i_col=None,
+            profile_label="sample",
+        )
+
+
+@pytest.mark.parametrize("q_selector", [None, "Q", "Q (nm^-1)"])
+def test_cli_whitespace_parenthesized_q_and_alternate_intensity_selector(
+    tmp_path: Path,
+    q_selector: str | None,
+):
+    profile_path = tmp_path / "profile.dat"
+    profile_path.write_text(
+        "Q (nm^-1) I1 I2\n"
+        "0.10 10 20\n"
+        "0.20 9 18\n"
+        "0.30 8 16\n",
+        encoding="utf-8",
+    )
+
+    profile = _read_profile_for_estimate(
+        profile_path,
+        q_col=q_selector,
+        i_col="I2",
+        profile_label="sample",
+    )
+    normalized = _normalize_q_profile(profile, profile_label="sample")
+
+    np.testing.assert_allclose(profile["intensity"], [20.0, 18.0, 16.0])
+    np.testing.assert_allclose(normalized["x"], [0.01, 0.02, 0.03])
+    assert normalized["x_unit"] == "A^-1"
+
+
+def test_cli_alternate_intensity_reassesses_state_and_keeps_unsorted_uncertainty_aligned(
+    tmp_path: Path,
+):
+    profile_path = tmp_path / "unsorted.csv"
+    profile_path.write_text(
+        "q,I_abs (cm^-1),I_rel,Error\n"
+        "0.30,300,30,3\n"
+        "0.10,100,10,1\n"
+        "0.20,200,20,2\n",
+        encoding="utf-8",
+    )
+
+    profile = _read_profile_for_estimate(
+        profile_path,
+        q_col=None,
+        i_col="I_rel",
+        profile_label="sample",
+    )
+
+    np.testing.assert_allclose(profile["x"], [0.10, 0.20, 0.30])
+    np.testing.assert_allclose(profile["intensity"], [10.0, 20.0, 30.0])
+    np.testing.assert_allclose(profile["uncertainty"], [1.0, 2.0, 3.0])
+    assert profile["i_col"] == "I_rel"
+    assert profile["intensity_state"] == "relative"
+    assert "i_rel" in profile
+    assert "i_abs" not in profile
+    assert "err_rel" in profile
+    assert "err_abs" not in profile
+
+
+def test_cli_q_normalization_overwrites_stale_first_call_provenance():
+    profile = {
+        "x": [1.0, 2.0],
+        "x_col": "Q",
+        "x_unit": "nm^-1",
+        "operator_provenance": {
+            "q_unit_original": "A^-1",
+            "q_unit_conversion": "none",
+        },
+    }
+
+    normalized = _normalize_q_profile(profile, profile_label="sample")
+
+    assert normalized["operator_provenance"]["q_unit_original"] == "nm^-1"
+    assert normalized["operator_provenance"]["q_unit_conversion"] == "nm^-1_to_A^-1"
+
+
+@pytest.mark.parametrize(
+    ("header", "selector", "expected_q"),
+    [
+        ("S (nm^-1)", "S (nm^-1)", [0.01, 0.02, 0.03]),
+        ("X (1/A)", "X (1/A)", [0.1, 0.2, 0.3]),
+        ("angle", "angle", [0.1, 0.2, 0.3]),
+    ],
+)
+def test_cli_explicit_arbitrary_q_selector_preserves_complete_unit_suffix(
+    tmp_path: Path,
+    header: str,
+    selector: str,
+    expected_q: list[float],
+):
+    profile_path = tmp_path / "arbitrary_q.csv"
+    profile_path.write_text(
+        f"{header} I\n0.1 10\n0.2 9\n0.3 8\n",
+        encoding="utf-8",
+    )
+
+    profile = _read_profile_for_estimate(
+        profile_path,
+        q_col=selector,
+        i_col="I",
+        profile_label="sample",
+    )
+    normalized = _normalize_q_profile(profile, profile_label="sample")
+
+    np.testing.assert_allclose(normalized["x"], expected_q)
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "S (mm^-1)",
+        "S (nm^-10)",
+        "S (nm^-1) [A^-1]",
+        "S_nm^-1_",
+        "S_nm^-1-",
+        "S 1/nm_",
+    ],
+)
+def test_cli_explicit_arbitrary_q_selector_rejects_unknown_unit_suffix(
+    tmp_path: Path,
+    header: str,
+):
+    profile_path = tmp_path / "arbitrary_q_bad.csv"
+    profile_path.write_text(
+        f"{header},I\n0.1,10\n0.2,9\n0.3,8\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        profile = _read_profile_for_estimate(
+            profile_path,
+            q_col=header,
+            i_col="I",
+            profile_label="sample",
+        )
+        _normalize_q_profile(profile, profile_label="sample")
 
 
 def test_cli_estimate_k_invalid_override_lists_available_columns(
