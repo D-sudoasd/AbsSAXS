@@ -198,6 +198,43 @@ def test_tab3_q_nm_inverse_converts_to_q_angstrom_inverse():
     assert conversion == "q_nm^-1_to_q_a^-1"
 
 
+@pytest.mark.parametrize("x_col", ["Q_nm1", "Q_A1", "Q (nm)", "Q (mm^-1)"])
+def test_tab3_rejects_sign_stripped_or_unsupported_q_unit_headers(x_col):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile = {"x": np.array([0.01, 0.02, 0.03]), "x_col": x_col}
+
+    with pytest.raises(ValueError, match="单位|unit|歧义|reciprocal|倒数"):
+        app.resolve_external_x_axis("profile.dat", profile, mode="auto", wavelength_a="")
+
+
+def test_tab3_preserves_explicit_x_unit_and_rejects_unsupported_raw_hint():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile = {
+        "x": np.array([1.0, 2.0, 3.0]),
+        "x_col": "Q_nm1",
+        "x_unit": "nm^-1",
+        "x_unit_raw": "nm1",
+    }
+    q, label, conversion = app.resolve_external_x_axis(
+        "profile.dat", profile, mode="auto", wavelength_a=""
+    )
+    np.testing.assert_allclose(q, [0.1, 0.2, 0.3])
+    assert label == "Q_A^-1"
+    assert conversion == "q_nm^-1_to_q_a^-1"
+
+    unsupported = {
+        "x": np.array([0.01, 0.02, 0.03]),
+        "x_col": "Q",
+        "x_unit_raw": "nm",
+    }
+    with pytest.raises(ValueError, match="单位|unit|歧义|reciprocal|倒数"):
+        app.resolve_external_x_axis(
+            "profile.dat", unsupported, mode="auto", wavelength_a=""
+        )
+
+
 @pytest.mark.parametrize("mode", ["auto", "q_a^-1"])
 def test_tab3_ambiguous_named_q_unit_fails_closed(mode):
     module = _load_workbench_module()
@@ -206,6 +243,204 @@ def test_tab3_ambiguous_named_q_unit_fails_closed(mode):
 
     with pytest.raises(ValueError, match="单位|unit|歧义"):
         app.resolve_external_x_axis("profile.dat", profile, mode=mode, wavelength_a="")
+
+
+def test_tab3_profile_x_unit_contract_has_priority_and_supports_unicode_headers():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+
+    profile = {
+        "x": np.array([1.0, 2.0, 3.0]),
+        "x_col": "Q (misleading Chi label)",
+        "x_unit": "nm^-1",
+    }
+    q, label, conversion = app.resolve_external_x_axis(
+        "profile.dat", profile, mode="auto", wavelength_a=""
+    )
+    np.testing.assert_allclose(q, [0.1, 0.2, 0.3])
+    assert label == "Q_A^-1"
+    assert conversion == "q_nm^-1_to_q_a^-1"
+
+    unicode_header = {
+        "x": np.array([0.01, 0.02, 0.03]),
+        "x_col": "Q (Å⁻¹)",
+    }
+    q, label, conversion = app.resolve_external_x_axis(
+        "profile.dat", unicode_header, mode="auto", wavelength_a=""
+    )
+    np.testing.assert_array_equal(q, unicode_header["x"])
+    assert label == "Q_A^-1"
+    assert conversion == "none"
+
+
+def test_workbench_merge_ignores_nan_intensity_and_keeps_unknown_sigma():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    radial = np.array([0.1, 0.2, 0.3])
+    merged = app.merge_integrate1d_results(
+        [
+            SimpleNamespace(
+                radial=radial,
+                intensity=np.array([10.0, np.nan, np.nan]),
+                count=np.array([2.0, 2.0, 1.0]),
+                sigma=np.array([1.0, 2.0, 3.0]),
+            ),
+            SimpleNamespace(
+                radial=radial,
+                intensity=np.array([20.0, 30.0, 40.0]),
+                count=np.array([1.0, 1.0, 0.0]),
+                sigma=np.array([np.nan, 4.0, 5.0]),
+            ),
+        ]
+    )
+
+    np.testing.assert_allclose(merged.count, [3.0, 1.0, 0.0])
+    np.testing.assert_allclose(merged.intensity[:2], [40.0 / 3.0, 30.0])
+    assert np.isnan(merged.intensity[2])
+    assert np.isnan(merged.sigma[0])
+    assert merged.sigma[1] == pytest.approx(4.0)
+    assert np.isnan(merged.sigma[2])
+
+
+def test_instrument_signature_exposes_only_observed_fields_and_strict_mismatch(
+    monkeypatch,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    header = {
+        "Wavelength": "0.1 nm",
+        "Energy": "12.398 keV",
+        "Distance": "1000 mm",
+        "Pixel1": "100 um",
+        "Pixel2": "200 um",
+        "Detector": "Pilatus 1M",
+    }
+    signature = app.extract_instrument_signature(
+        "first.tif", header_dict=header, shape=(10, 12)
+    )
+    assert signature["path"] == "first.tif"
+    assert signature["shape"] == (10, 12)
+    assert signature["detector"] == "Pilatus 1M"
+    assert signature["distance_m"] == pytest.approx(1.0)
+    assert signature["pixel1_m"] == pytest.approx(1.0e-4)
+    assert signature["pixel2_m"] == pytest.approx(2.0e-4)
+    assert signature["wavelength_a"] == pytest.approx(1.0)
+    assert signature["energy_kev"] == pytest.approx(12.398)
+
+    app.session_geometry_fallback = {}
+
+    def fake_loader(path, *, dtype=None):
+        del dtype
+        if str(path) == "first.tif":
+            return SimpleNamespace(data=np.zeros((10, 12)), header=header)
+        return SimpleNamespace(
+            data=np.zeros((12, 12)),
+            header={
+                "Wavelength": "0.2 nm",
+                "Energy": "6.2 keV",
+                "Distance": "1000 mm",
+                "Pixel1": "100 um",
+                "Pixel2": "200 um",
+                "Detector": "Eiger",
+            },
+        )
+
+    monkeypatch.setattr(module, "_workbench_load_detector_image", fake_loader)
+    issues = app.check_instrument_consistency(["first.tif", "second.tif"])
+    assert any("图像尺寸不一致" in issue for issue in issues)
+    assert any("探测器型号不一致" in issue for issue in issues)
+    assert any("波长" in issue for issue in issues)
+    assert any("能量" in issue for issue in issues)
+
+
+def test_instrument_consistency_applies_session_geometry_fallback_to_each_file(
+    monkeypatch,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.session_geometry_fallback = {
+        "wavelength_a": 1.0,
+        "energy_kev": module.HC_KEV_A,
+        "distance_m": 0.2,
+        "pixel1_m": 1.0e-4,
+        "pixel2_m": 1.0e-4,
+    }
+
+    monkeypatch.setattr(
+        module,
+        "_workbench_load_detector_image",
+        lambda _path, dtype=None: SimpleNamespace(
+            data=np.zeros((10, 10)), header={}
+        ),
+    )
+
+    assert app.check_instrument_consistency(["first.tif", "second.tif"]) == []
+
+
+def test_instrument_consistency_reports_unreadable_reference_file(monkeypatch):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.session_geometry_fallback = {}
+
+    def fail_loader(_path, dtype=None):
+        raise OSError("cannot read detector image")
+
+    monkeypatch.setattr(module, "_workbench_load_detector_image", fail_loader)
+    issues = app.check_instrument_consistency(["first.tif"])
+
+    assert len(issues) == 1
+    assert "first.tif" in issues[0]
+    assert "cannot read detector image" in issues[0]
+
+
+def test_instrument_consistency_checks_reliable_poni_distance_and_pixels(monkeypatch):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.session_geometry_fallback = {}
+    headers = {
+        "Wavelength": "1 A",
+        "Distance": "200 mm",
+        "Pixel1": "100 um",
+        "Pixel2": "100 um",
+    }
+    monkeypatch.setattr(
+        module,
+        "_workbench_load_detector_image",
+        lambda _path, dtype=None: SimpleNamespace(
+            data=np.zeros((10, 10)), header=headers
+        ),
+    )
+    fake_ai = SimpleNamespace(
+        wavelength=0.1e-10,
+        dist=0.3,
+        detector=SimpleNamespace(pixel1=2.0e-4, pixel2=1.0e-4),
+    )
+    monkeypatch.setattr(module.pyFAI, "load", lambda _path: fake_ai)
+
+    issues = app.check_instrument_consistency(
+        ["sample.tif"], poni_path="geometry.poni", tol_pct=0.5
+    )
+    assert any("poni 样探距" in issue for issue in issues)
+    assert any("poni pixel1" in issue for issue in issues)
+
+
+def test_instrument_signature_rejects_explicit_wavelength_energy_pair_mismatch(
+    monkeypatch,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.session_geometry_fallback = {}
+    bad_header = {"Wavelength": "1 A", "Energy": "6 keV"}
+    monkeypatch.setattr(
+        module,
+        "_workbench_load_detector_image",
+        lambda _path, dtype=None: SimpleNamespace(
+            data=np.zeros((10, 10)), header=bad_header
+        ),
+    )
+
+    issues = app.check_instrument_consistency(["sample.tif"], tol_pct=0.5)
+    assert any("波长与能量内部不一致" in issue for issue in issues)
 
 
 def test_tab3_profile_parser_preserves_operator_fingerprint_header(tmp_path):
@@ -448,6 +683,326 @@ def test_tab2_dry_run_blocks_disabled_formal_configurations(mode, resume_enabled
     assert captured["warnings_count"] >= 1
 
 
+def test_tab2_dry_run_reuses_fluorescence_validation_and_blocks_missing_f0():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.t2_files = ["sample.tif"]
+    app.global_vars = {
+        "k_factor": _Var(2.5),
+        "poni_path": _Var("geometry.poni"),
+        "bg_exp": _Var(1.0),
+        "bg_i0": _Var(10.0),
+        "bg_t": _Var(1.0),
+    }
+    app.t2_calc_mode = _Var("fixed")
+    app.t2_mu = _Var("")
+    app.t2_fixed_thk = _Var(1.0)
+    app.t2_mask_path = _Var("")
+    app.t2_flat_path = _Var("")
+    app.t2_apply_solid_angle = _Var(True)
+    app.t2_workers = _Var(1)
+    app.t2_ref_mode = _Var("fixed")
+    app.t2_strict_instrument = _Var(False)
+    app.t2_resume_enabled = _Var(False)
+    app.t2_fluo_enabled = _Var(True)
+    app.t2_fluo_method = _Var("constant")
+    app.t2_fluo_f0 = _Var("")
+    app.t2_fluo_f0_uncertainty = _Var("")
+    app.t2_fluo_beta = _Var(1.0)
+    app.t2_fluo_beta_uncertainty = _Var("")
+    app.t2_fluo_qmin = _Var("")
+    app.t2_fluo_qmax = _Var("")
+    app.t2_fluo_path = _Var("")
+    app.t2_fluo_status = _Var("")
+    app.get_monitor_mode = lambda: "rate"
+    app.get_selected_modes = lambda: ["1d_full"]
+    app.resolve_t2_polarization = lambda: (False, None)
+    app.resolve_sample_thickness_config = lambda **_kwargs: {
+        "mode": "fixed",
+        "mu_cm_inv": None,
+        "fixed_thickness_cm": 0.1,
+    }
+    app.compute_norm_factor = lambda *_args: 1.0
+    app.parse_header = lambda _path: (1.0, 10.0, 0.5)
+    app.require_calibration_context_for_batch = lambda **_kwargs: object()
+
+    captured = {}
+
+    class StopAfterGate(Exception):
+        pass
+
+    def capture_gate(**kwargs):
+        captured.update(kwargs)
+        raise StopAfterGate
+
+    app._evaluate_preflight_gate = capture_gate
+    with pytest.raises(StopAfterGate):
+        app.dry_run()
+
+    assert captured["failed_files"] == 1
+    assert captured["warnings_count"] >= 1
+
+
+def test_tab2_dry_run_blocks_structured_format_for_radial_chi():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.t2_files = ["sample.tif"]
+    app.global_vars = {
+        "k_factor": _Var(2.5),
+        "poni_path": _Var("geometry.poni"),
+        "bg_exp": _Var(1.0),
+        "bg_i0": _Var(10.0),
+        "bg_t": _Var(1.0),
+    }
+    app.t2_calc_mode = _Var("fixed")
+    app.t2_mu = _Var("")
+    app.t2_fixed_thk = _Var(1.0)
+    app.t2_mask_path = _Var("")
+    app.t2_flat_path = _Var("")
+    app.t2_apply_solid_angle = _Var(True)
+    app.t2_workers = _Var(1)
+    app.t2_ref_mode = _Var("fixed")
+    app.t2_strict_instrument = _Var(False)
+    app.t2_output_format = _Var("cansas_xml")
+    app.t2_rad_qmin = _Var(0.01)
+    app.t2_rad_qmax = _Var(0.03)
+    app.get_monitor_mode = lambda: "rate"
+    app.get_selected_modes = lambda: ["radial_chi"]
+    app.resolve_t2_polarization = lambda: (False, None)
+    app.resolve_sample_thickness_config = lambda **_kwargs: {
+        "mode": "fixed",
+        "mu_cm_inv": None,
+        "fixed_thickness_cm": 0.1,
+    }
+    app.compute_norm_factor = lambda *_args: 1.0
+    app.parse_header = lambda _path: (1.0, 10.0, 0.5)
+    app.require_calibration_context_for_batch = lambda **_kwargs: object()
+    captured = {}
+
+    class StopAfterGate(Exception):
+        pass
+
+    def capture_gate(**kwargs):
+        captured.update(kwargs)
+        raise StopAfterGate
+
+    app._evaluate_preflight_gate = capture_gate
+    with pytest.raises(StopAfterGate):
+        app.dry_run()
+
+    assert captured["failed_files"] == 1
+    assert captured["warnings_count"] >= 1
+
+
+@pytest.mark.parametrize(
+    ("export_cal2d", "expected_failed_files"),
+    [(False, 1), (True, 0)],
+)
+def test_tab2_dry_run_empty_modes_blocks_unless_cal2d_export_is_enabled(
+    export_cal2d, expected_failed_files
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.t2_files = ["sample.tif"]
+    app.global_vars = {
+        "k_factor": _Var(2.5),
+        "poni_path": _Var("geometry.poni"),
+        "bg_exp": _Var(1.0),
+        "bg_i0": _Var(10.0),
+        "bg_t": _Var(1.0),
+    }
+    app.t2_calc_mode = _Var("fixed")
+    app.t2_mu = _Var("")
+    app.t2_fixed_thk = _Var(1.0)
+    app.t2_mask_path = _Var("")
+    app.t2_flat_path = _Var("")
+    app.t2_apply_solid_angle = _Var(True)
+    app.t2_workers = _Var(1)
+    app.t2_ref_mode = _Var("fixed")
+    app.t2_strict_instrument = _Var(False)
+    app.t2_output_format = _Var("tsv")
+    app.t2_export_cal2d = _Var(export_cal2d)
+    app.get_monitor_mode = lambda: "rate"
+    app.get_selected_modes = lambda: []
+    app.resolve_t2_polarization = lambda: (False, None)
+    app.resolve_sample_thickness_config = lambda **_kwargs: {
+        "mode": "fixed",
+        "mu_cm_inv": None,
+        "fixed_thickness_cm": 0.1,
+    }
+    app.compute_norm_factor = lambda *_args: 1.0
+    app.parse_header = lambda _path: (1.0, 10.0, 0.5)
+    app.require_calibration_context_for_batch = lambda **_kwargs: object()
+    captured = {}
+
+    class StopAfterGate(Exception):
+        pass
+
+    def capture_gate(**kwargs):
+        captured.update(kwargs)
+        raise StopAfterGate
+
+    app._evaluate_preflight_gate = capture_gate
+    with pytest.raises(StopAfterGate):
+        app.dry_run()
+
+    assert captured["failed_files"] == expected_failed_files
+
+
+def test_tab2_dry_run_strict_instrument_mismatch_is_blocking():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.t2_files = ["sample.tif"]
+    app.global_vars = {
+        "k_factor": _Var(2.5),
+        "poni_path": _Var("geometry.poni"),
+        "bg_exp": _Var(1.0),
+        "bg_i0": _Var(10.0),
+        "bg_t": _Var(1.0),
+    }
+    app.t2_calc_mode = _Var("fixed")
+    app.t2_mu = _Var("")
+    app.t2_fixed_thk = _Var(1.0)
+    app.t2_mask_path = _Var("")
+    app.t2_flat_path = _Var("")
+    app.t2_apply_solid_angle = _Var(True)
+    app.t2_workers = _Var(1)
+    app.t2_ref_mode = _Var("fixed")
+    app.t2_strict_instrument = _Var(True)
+    app.t2_instr_tol_pct = _Var(0.5)
+    app.t2_output_format = _Var("tsv")
+    app.get_monitor_mode = lambda: "rate"
+    app.get_selected_modes = lambda: ["1d_full"]
+    app.resolve_t2_polarization = lambda: (False, None)
+    app.resolve_sample_thickness_config = lambda **_kwargs: {
+        "mode": "fixed",
+        "mu_cm_inv": None,
+        "fixed_thickness_cm": 0.1,
+    }
+    app.compute_norm_factor = lambda *_args: 1.0
+    app.parse_header = lambda _path: (1.0, 10.0, 0.5)
+    app.require_calibration_context_for_batch = lambda **_kwargs: object()
+    app.check_instrument_consistency = lambda *_args, **_kwargs: [
+        "sample.tif: wavelength mismatch"
+    ]
+    captured = {}
+
+    class StopAfterGate(Exception):
+        pass
+
+    def capture_gate(**kwargs):
+        captured.update(kwargs)
+        raise StopAfterGate
+
+    app._evaluate_preflight_gate = capture_gate
+    with pytest.raises(StopAfterGate):
+        app.dry_run()
+
+    assert captured["failed_files"] == 1
+    assert captured["warnings_count"] >= 1
+
+
+def test_tab3_dry_run_blocks_structured_format_for_chi_profile(tmp_path):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    fingerprint = "d" * 64
+    sample = tmp_path / "chi_profile.dat"
+    sample.write_text(
+        f"# calibration_context_fingerprint: {fingerprint}\n"
+        "# intensity_state: relative\n"
+        "# corrections_applied: []\n"
+        "# chi I_rel Error\n"
+        "0 10 0.1\n10 9 0.1\n20 8 0.1\n",
+        encoding="utf-8",
+    )
+    app.t3_files = [str(sample)]
+    app.t3_pipeline_mode = _Var("scaled")
+    app.t3_corr_mode = _Var("k_only")
+    app.t3_fixed_thk = _Var(1.0)
+    app.t3_resume_enabled = _Var(False)
+    app.t3_output_format = _Var("cansas_xml")
+    app.t3_x_mode = _Var("auto")
+    app.t3_wavelength_a = _Var("")
+    app.t3_buffer_enabled = _Var(False)
+    app.t3_buffer_status = _Var("")
+    app.t3_fluo_enabled = _Var(False)
+    app.global_vars = {"k_factor": _Var(2.5)}
+    app.get_monitor_mode = lambda: "rate"
+    context = SimpleNamespace(fingerprint=lambda: fingerprint)
+    app.require_trusted_k_for_external = lambda *_args, **_kwargs: context
+    app.require_external_profile_operator_provenance = lambda *_args, **_kwargs: fingerprint
+    captured = {}
+
+    class StopAfterGate(Exception):
+        pass
+
+    def capture_gate(**kwargs):
+        captured.update(kwargs)
+        raise StopAfterGate
+
+    app._evaluate_preflight_gate = capture_gate
+    with pytest.raises(StopAfterGate):
+        app.dry_run_external_1d()
+
+    assert captured["failed_files"] == 1
+    assert captured["warnings_count"] >= 0
+
+
+def test_t2_measured_fluorescence_uses_auto_q_without_tab3_axis_state(monkeypatch):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.t2_fluo_enabled = _Var(True)
+    app.t2_fluo_method = _Var("measured")
+    app.t2_fluo_f0 = _Var("")
+    app.t2_fluo_f0_uncertainty = _Var("")
+    app.t2_fluo_beta = _Var(1.0)
+    app.t2_fluo_beta_uncertainty = _Var("0")
+    app.t2_fluo_qmin = _Var("")
+    app.t2_fluo_qmax = _Var("")
+    app.t2_fluo_path = _Var("measured.dat")
+    app.t2_fluo_status = _Var("")
+    calls = {}
+
+    def capture_axis(path, profile, *, mode=None, wavelength_a=None):
+        calls.update(mode=mode, wavelength_a=wavelength_a)
+        return {
+            **profile,
+            "x_label": "Q_A^-1",
+            "x_conversion": "q_nm^-1_to_q_a^-1",
+        }
+
+    app.read_external_1d_profile = lambda _path: {
+        "x": np.array([0.1, 0.2, 0.3]),
+        "x_col": "Q",
+        "x_unit": "nm^-1",
+    }
+    app.prepare_external_profile_axis = capture_axis
+    app.require_external_profile_operator_provenance = lambda *_args, **_kwargs: "f" * 64
+    monkeypatch.setattr(
+        module,
+        "require_absolute_input_for_fluorescence_subtraction",
+        lambda *_args, **_kwargs: None,
+    )
+    app._optional_file_sha256 = lambda _path: "a" * 64
+    context = SimpleNamespace()
+
+    payload = app.prepare_workbench_fluorescence(
+        source="t2",
+        pipeline_mode="scaled",
+        calibration_context=context,
+        k_factor=2.5,
+        require_scaled_pipeline=False,
+    )
+
+    assert payload["enabled"] is True
+    assert calls == {"mode": "auto", "wavelength_a": ""}
+
+
 @pytest.mark.parametrize(
     ("thickness_mm", "resume_enabled"),
     [(0.0, False), (1.0, True)],
@@ -590,6 +1145,78 @@ def test_workbench_safety_copy_and_legacy_resume_default_are_explicit():
     assert "optional" in module.I18N["en"]["lbl_t3_alpha_uncertainty"]
     assert "stays NaN" in module.I18N["en"]["hint_t3_alpha_uncertainty"]
     assert "\u539f\u4f4d" in module.I18N["zh"]["hint_t2_thickness"]
+
+
+def test_workbench_ui_contract_keeps_labels_tooltips_and_stable_format_tokens():
+    module = _load_workbench_module()
+
+    assert module.OUTPUT_FORMAT_TOKENS == ("tsv", "csv", "cansas_xml", "nxcansas_h5")
+    for language in ("en", "zh"):
+        pack = module.I18N[language]
+        for key in (
+            "lbl_t2_fluo_method",
+            "lbl_t2_fluo_f0",
+            "lbl_t2_fluo_f0_uncertainty",
+            "lbl_t2_fluo_beta",
+            "lbl_t2_fluo_beta_uncertainty",
+            "lbl_t2_fluo_qmin",
+            "lbl_t2_fluo_qmax",
+            "lbl_t3_fluo_beta_uncertainty",
+            "lbl_t3_fluo_qmin",
+            "lbl_t3_fluo_qmax",
+            "tip_output_format",
+            "tip_browse_file",
+            "tip_browse_dir",
+        ):
+            assert pack[key]
+    assert module.I18N["en"]["lbl_t1_std_file"] == "Standard image:"
+    assert "NIST matching" not in module.I18N["en"]["tip_t1_calibrate"]
+    assert "orange reference markers" in module.I18N["en"]["tip_t1_plot"]
+    assert "橙色参考点" in module.I18N["zh"]["tip_t1_plot"]
+    assert "0 < T ≤ 1" in module.I18N["en"]["hint_t1_phys"]
+    assert "0 < T ≤ 1" in module.I18N["zh"]["hint_t1_phys"]
+    assert set(module.EXTERNAL_1D_FILE_PATTERN.split()) >= {
+        "*.dat",
+        "*.txt",
+        "*.chi",
+        "*.csv",
+        "*.xml",
+        "*.h5",
+        "*.hdf5",
+    }
+    assert ".h5 .hdf5" in module.I18N["en"]["lbl_t3_formats"]
+    assert "canSAS XML" in module.I18N["en"]["tip_output_format"]
+    assert "Q (Å⁻¹)" in module.I18N["en"]["tip_output_format"]
+    assert "does not change output routing" in module.I18N["en"]["tip_t2_group"]
+    assert "不会改变输出路由" in module.I18N["zh"]["tip_t2_group"]
+
+
+def test_workbench_minsize_preserves_normal_minimum_and_caps_small_geometry():
+    module = _load_workbench_module()
+    geometry = SimpleNamespace(width=736, height=520)
+
+    assert module.SAXSAbsWorkbenchApp._window_min_size_for_geometry(geometry) == (
+        736,
+        520,
+    )
+    assert module.SAXSAbsWorkbenchApp._window_min_size_for_geometry(
+        SimpleNamespace(width=960, height=620)
+    ) == module.WORKBENCH_MIN_SIZE
+    assert module.SAXSAbsWorkbenchApp._window_min_size_for_geometry(None) == (
+        900,
+        600,
+    )
+
+
+@pytest.mark.parametrize("output_format", ["cansas_xml", "nxcansas_h5"])
+def test_structured_output_formats_fail_closed_for_chi_and_accept_q(output_format):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+
+    with pytest.raises(ValueError, match=r"Q_A\^-1|Q.*轴"):
+        app.validate_output_format_for_axis(output_format, "Chi_deg")
+    assert app.validate_output_format_for_axis(output_format, "Q_A^-1") == output_format
+    assert app.validate_output_format_for_axis("tsv", "Chi_deg") == "tsv"
 
 
 def test_fixed_tab2_preflight_excludes_diagnostic_mu_payload():

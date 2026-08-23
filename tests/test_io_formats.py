@@ -39,6 +39,7 @@ class TestCanSAS1DXML:
         assert "i_abs" in result
         assert "i_rel" not in result
         assert result["intensity_state"] == "absolute_cm^-1"
+        assert result["x_unit"] == "A^-1"
         np.testing.assert_allclose(result["x"], q, rtol=1e-6)
         np.testing.assert_allclose(result["i_abs"], i_abs, rtol=1e-6)
         np.testing.assert_allclose(result["err_abs"], err, rtol=1e-6)
@@ -49,6 +50,22 @@ class TestCanSAS1DXML:
         write_cansas1d_xml(xml_path, q, i_abs, metadata=ABS_META)
         result = read_cansas1d_xml(xml_path)
         np.testing.assert_allclose(result["x"], q, rtol=1e-6)
+
+    def test_reader_rejects_inconsistent_q_units(self, tmp_path):
+        q, i_abs, err = self._make_data(4)
+        xml_path = tmp_path / "inconsistent-q-units.xml"
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+
+        tree = ET.parse(xml_path)
+        namespace = "{urn:cansas1d:1.1}"
+        q_elements = tree.getroot().iter(f"{namespace}Q")
+        next(q_elements)
+        second = next(q_elements)
+        second.set("unit", "1/nm")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+
+        with pytest.raises(ValueError, match="inconsistent Q units"):
+            read_cansas1d_xml(xml_path)
 
     def test_auto_detect_xml_extension(self, tmp_path):
         """read_external_1d_profile should auto-detect .xml files."""
@@ -179,6 +196,7 @@ class TestNXcanSASHDF5:
         result = read_nxcansas_h5(h5_path)
         assert "i_abs" in result
         assert "i_rel" not in result
+        assert result["x_unit"] == "A^-1"
         np.testing.assert_allclose(result["x"], q, rtol=1e-10)
         np.testing.assert_allclose(result["i_abs"], i_abs, rtol=1e-10)
         np.testing.assert_allclose(result["err_abs"], err, rtol=1e-10)
@@ -236,6 +254,23 @@ class TestNXcanSASHDF5:
         result = read_nxcansas_h5(h5_path)
         np.testing.assert_allclose(result["x"], q, rtol=1e-10)
         assert np.all(np.isnan(result["err_abs"]))
+
+    def test_reader_preserves_nm_inverse_q_units_without_conversion(self, tmp_path):
+        h5_path = tmp_path / "nm-q.h5"
+        q = np.array([0.1, 0.2, 0.3])
+        intensity = np.array([10.0, 9.0, 8.0])
+        with h5py.File(h5_path, "w") as f:
+            entry = f.create_group("sasentry01")
+            data = entry.create_group("sasdata01")
+            data.attrs["canSAS_class"] = "SASdata"
+            q_ds = data.create_dataset("Q", data=q)
+            q_ds.attrs["units"] = "1/nm"
+            i_ds = data.create_dataset("I", data=intensity)
+            i_ds.attrs["units"] = "1/cm"
+
+        result = read_nxcansas_h5(h5_path)
+        assert result["x_unit"] == "nm^-1"
+        np.testing.assert_allclose(result["x"], q)
 
     def test_write_shape_mismatch_raises(self, tmp_path):
         h5_path = tmp_path / "bad.h5"

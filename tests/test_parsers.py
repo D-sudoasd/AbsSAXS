@@ -1,13 +1,58 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from saxsabs.io.parsers import (
+    canonicalize_q_unit,
     extract_float,
+    infer_q_unit_from_column,
     normalize_transmission,
     parse_header_values,
     read_external_1d_profile,
 )
+
+
+@pytest.mark.parametrize(
+    "raw_unit",
+    [
+        "nm",
+        "angstrom",
+        "A",
+        "nm1",
+        "a1",
+        "angstrom1",
+        "Q (nm)",
+        "Q (angstrom)",
+        "Q [nm^-1)",
+    ],
+)
+def test_q_unit_canonicalization_rejects_bare_or_signless_lengths(raw_unit):
+    assert canonicalize_q_unit(raw_unit) is None
+
+
+@pytest.mark.parametrize(
+    ("raw_unit", "expected"),
+    [
+        ("1/A", "A^-1"),
+        ("1/angstrom", "A^-1"),
+        ("A^-1", "A^-1"),
+        ("Å⁻¹", "A^-1"),
+        ("nm^-1", "nm^-1"),
+        ("1/nm", "nm^-1"),
+        ("inverse angstrom", "A^-1"),
+        ("inv nm", "nm^-1"),
+        ("invangstrom", "A^-1"),
+        ("invnm", "nm^-1"),
+    ],
+)
+def test_q_unit_canonicalization_requires_and_accepts_reciprocal_marker(raw_unit, expected):
+    assert canonicalize_q_unit(raw_unit) == expected
+
+
+def test_infer_q_unit_from_column_leaves_bare_q_length_unknown():
+    assert infer_q_unit_from_column("Q (nm)") is None
+    assert infer_q_unit_from_column("Q (angstrom)") is None
 
 
 def test_extract_float_accepts_thousands_and_decimal_commas():
@@ -178,3 +223,170 @@ def test_read_external_1d_profile_prefers_combined_over_earlier_statistical_colu
 
     assert out["err_col"] == "Error_CombinedStandard_cm^-1"
     np.testing.assert_allclose(out["uncertainty"], [1.5, 2.5, 3.5])
+
+
+def test_read_external_1d_profile_recognizes_unicode_q_intensity_and_sigma_units(
+    tmp_path: Path,
+):
+    f = tmp_path / "unicode_units.csv"
+    f.write_text(
+        "Q (Å⁻¹),I (cm⁻¹),σ (cm⁻¹)\n"
+        "0.10,100,5\n"
+        "0.20,90,4\n"
+        "0.30,80,4\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+
+    assert out["x_unit"] == "A^-1"
+    assert out["i_col"] == "I (cm⁻¹)"
+    assert out["err_col"] == "σ (cm⁻¹)"
+    np.testing.assert_allclose(out["x"], [0.10, 0.20, 0.30])
+    np.testing.assert_allclose(out["uncertainty"], [5.0, 4.0, 4.0])
+
+
+def test_read_external_1d_profile_recognizes_unicode_nm_q_unit(tmp_path: Path):
+    f = tmp_path / "unicode_nm.csv"
+    f.write_text(
+        "Q (nm⁻¹),I\n"
+        "0.10,100\n"
+        "0.20,90\n"
+        "0.30,80\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+
+    assert out["x_unit"] == "nm^-1"
+    np.testing.assert_allclose(out["x"], [0.10, 0.20, 0.30])
+
+
+def test_read_external_1d_profile_recognizes_angstrom_sign_variant(tmp_path: Path):
+    f = tmp_path / "angstrom_sign.csv"
+    f.write_text(
+        "Q (Å⁻¹),I\n"
+        "0.10,100\n"
+        "0.20,90\n"
+        "0.30,80\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+
+    assert out["x_unit"] == "A^-1"
+
+
+@pytest.mark.parametrize("q_header", ["Q (nm)", "Q (angstrom)"])
+def test_read_external_1d_profile_keeps_bare_q_length_unknown(
+    tmp_path: Path, q_header: str
+):
+    f = tmp_path / "bare_length.csv"
+    f.write_text(
+        f"{q_header},I\n"
+        "0.10,100\n"
+        "0.20,90\n"
+        "0.30,80\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+
+    assert out["x_unit"] is None
+    assert out["x_unit_raw"] in {"nm", "angstrom"}
+
+
+def test_read_external_1d_profile_rejoins_parenthesized_comment_header_units(
+    tmp_path: Path,
+):
+    f = tmp_path / "comment_units.dat"
+    f.write_text(
+        "# Q (nm^-1) I (cm^-1) sigma (cm^-1)\n"
+        "0.10 100 5\n"
+        "0.20 90 4\n"
+        "0.30 80 4\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+
+    assert out["x_col"] == "Q (nm^-1)"
+    assert out["x_unit"] == "nm^-1"
+    assert out["i_col"] == "I (cm^-1)"
+    assert out["err_col"] == "sigma (cm^-1)"
+    np.testing.assert_allclose(out["intensity"], [100.0, 90.0, 80.0])
+    np.testing.assert_allclose(out["uncertainty"], [5.0, 4.0, 4.0])
+
+
+@pytest.mark.parametrize(
+    ("header", "expected_unit"),
+    [("Q (nm^-1) I", "nm^-1"), ("Q (Å⁻¹) I", "A^-1")],
+)
+def test_read_external_1d_profile_rejoins_plain_parenthesized_header_units(
+    tmp_path: Path, header: str, expected_unit: str
+):
+    f = tmp_path / "plain_header_units.dat"
+    f.write_text(
+        f"{header}\n"
+        "0.10 100 5\n"
+        "0.20 90 4\n"
+        "0.30 80 4\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+
+    assert out["x_col"] == header.rsplit(" I", 1)[0]
+    assert out["x_unit"] == expected_unit
+    assert out["i_col"] == "I"
+    assert out["err_col"] == ""
+    np.testing.assert_allclose(out["intensity"], [100.0, 90.0, 80.0])
+    assert np.all(np.isnan(out["uncertainty"]))
+
+
+@pytest.mark.parametrize(
+    ("header", "expected_unit"),
+    [
+        ("# Q [nm^-1] I", "nm^-1"),
+        ("Q [nm^-1] I", "nm^-1"),
+        ("# Q {Å⁻¹} I", "A^-1"),
+        ("Q {Å⁻¹} I", "A^-1"),
+    ],
+)
+def test_read_external_1d_profile_rejoins_square_and_braced_unit_headers(
+    tmp_path: Path, header: str, expected_unit: str
+):
+    f = tmp_path / "delimited_header_units.dat"
+    f.write_text(
+        f"{header}\n"
+        "0.10 100 5\n"
+        "0.20 90 4\n"
+        "0.30 80 4\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+    header_without_comment = header.removeprefix("# ")
+
+    assert out["x_col"] == header_without_comment.rsplit(" I", 1)[0]
+    assert out["x_unit"] == expected_unit
+    assert out["i_col"] == "I"
+    assert out["err_col"] == ""
+    np.testing.assert_allclose(out["intensity"], [100.0, 90.0, 80.0])
+
+
+@pytest.mark.parametrize("header", ["# Q [nm^-1) I", "Q {Å⁻¹] I"])
+def test_read_external_1d_profile_rejects_mismatched_unit_delimiters(
+    tmp_path: Path, header: str
+):
+    f = tmp_path / "malformed_delimiter_header.dat"
+    f.write_text(
+        f"{header}\n"
+        "0.10 100 5\n"
+        "0.20 90 4\n"
+        "0.30 80 4\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Q-unit delimiter"):
+        read_external_1d_profile(f)

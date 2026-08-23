@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from io import StringIO
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,26 @@ from saxsabs.core.intensity_state import IntensityState, assess_intensity_state
 
 FLOAT_PATTERN = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 COMMA_THOUSANDS_PATTERN = re.compile(r"(?<!\d)[-+]?\d{1,3}(?:,\d{3})+(?:[eE][-+]?\d+)?(?!\d)")
+
+
+_SUPERSCRIPT_TRANSLATION = str.maketrans(
+    {
+        "⁰": "0",
+        "¹": "1",
+        "²": "2",
+        "³": "3",
+        "⁴": "4",
+        "⁵": "5",
+        "⁶": "6",
+        "⁷": "7",
+        "⁸": "8",
+        "⁹": "9",
+        "⁻": "-",
+        "−": "-",
+        "–": "-",
+        "—": "-",
+    }
+)
 
 
 _OPERATOR_PROVENANCE_ALIASES = {
@@ -136,8 +157,112 @@ def _read_text_operator_provenance(path: str | Path) -> dict[str, str]:
             provenance[key] = match.group(2).strip()
     return provenance
 
+
+def _normalise_unit_text(value: object) -> str:
+    """Return a conservative ASCII token for a unit/header fragment."""
+
+    text = unicodedata.normalize("NFKC", str(value or "").strip().lower())
+    text = text.translate(_SUPERSCRIPT_TRANSLATION)
+    text = text.replace("å", "angstrom").replace("Å", "angstrom")
+    return text
+
+
+def _unit_token(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "", _normalise_unit_text(value))
+
+
+def canonicalize_q_unit(value: object) -> str | None:
+    """Canonicalize common reciprocal-length units used for a Q axis.
+
+    Numeric Q values are intentionally left untouched by the parser.  Unknown
+    or unsupported units return ``None`` instead of being guessed.  A bare
+    length (``nm``/``angstrom``) is not reciprocal; the source must include
+    ``1/``, an explicit ``-1`` exponent, or ``inverse``/``inv``.
+    """
+
+    if value is None:
+        return None
+    text = _normalise_unit_text(value)
+    if not text:
+        return None
+    if not _unit_delimiters_are_balanced(text):
+        return None
+    # A column label may include a leading Q (for example ``Q_A^-1``), but
+    # this does not itself establish reciprocal units.
+    text = re.sub(r"^\s*q(?:\s*[_:\-]?\s*)?", "", text, count=1)
+    has_reciprocal_slash = bool(re.search(r"(?<!\d)1\s*/", text))
+    has_signed_inverse = bool(re.search(r"(?:\^?\s*-\s*1)", text))
+    has_inverse_word = bool(
+        re.search(r"(?<![a-z])(?:inverse|inv)(?![a-z])", text)
+        or re.search(r"(?<![a-z])(?:inverse|inv)(?:angstrom|nm|a)(?![a-z])", text)
+    )
+    if not (has_reciprocal_slash or has_signed_inverse or has_inverse_word):
+        return None
+
+    base_text = re.sub(r"^(?:inverse|inv)", "", text)
+    if "angstrom" in base_text or re.search(r"(?<![a-z])a(?![a-z])", base_text):
+        return "A^-1"
+    if re.search(r"(?<![a-z])nm(?![a-z])", base_text):
+        return "nm^-1"
+    return None
+
+
+def _unit_delimiters_are_balanced(text: str) -> bool:
+    """Reject mismatched or unclosed unit delimiters before token inference."""
+
+    matching = {"(": ")", "[": "]", "{": "}"}
+    closing = set(matching.values())
+    stack: list[str] = []
+    for char in text:
+        if char in matching:
+            stack.append(matching[char])
+        elif char in closing:
+            if not stack or stack.pop() != char:
+                return False
+    return not stack
+
+
+def q_axis_kind(name: object) -> str:
+    """Classify a source X-column as Q, chi, two-theta, or unknown."""
+
+    token = _unit_token(name)
+    if "2theta" in token or "twotheta" in token:
+        return "two_theta"
+    if "chi" in token:
+        return "chi"
+    if token.startswith("q"):
+        return "q"
+    return "unknown"
+
+
+def infer_q_unit_from_column(name: object) -> str | None:
+    """Infer a canonical Q unit from a column header, without guessing plain Q."""
+
+    if q_axis_kind(name) != "q":
+        return None
+    text = _normalise_unit_text(name)
+    match = re.match(r"^q(?:\s*[_:\-]?\s*)(.*)$", text, flags=re.IGNORECASE)
+    suffix = match.group(1) if match is not None else ""
+    if not suffix.strip(" _-:()[]{}"):
+        return None
+    return canonicalize_q_unit("q" + suffix)
+
+
+def q_column_unit_hint(name: object) -> str | None:
+    """Return an explicit, but possibly unsupported, Q-header unit hint."""
+
+    if q_axis_kind(name) != "q":
+        return None
+    text = _normalise_unit_text(name)
+    match = re.match(r"^q(?:\s*[_:\-]?\s*)(.*)$", text, flags=re.IGNORECASE)
+    suffix = match.group(1) if match is not None else ""
+    suffix = suffix.strip(" _-:()[]{}")
+    return suffix or None
+
+
 def _clean_column_name(name: Any) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(name).strip().lower())
+    text = _normalise_unit_text(name).replace("σ", "sigma")
+    return re.sub(r"[^a-z0-9]+", "", text)
 
 
 def _error_column_preference(name: Any) -> int:
@@ -207,7 +332,7 @@ def _comment_header_score(tokens: list[str]) -> int:
         score += _match_column_score(
             name,
             exact={"i", "intensity", "irel", "iabs", "signal", "count", "counts", "y"},
-            prefixes=("intensity", "signal", "count", "irel", "iabs"),
+            prefixes=("intensity", "signal", "count", "irel", "iabs", "i"),
             suffixes=("intensity",),
         )
         score += _match_column_score(
@@ -217,6 +342,80 @@ def _comment_header_score(tokens: list[str]) -> int:
             suffixes=("error", "sigma", "uncertainty"),
         )
     return score
+
+
+def _merge_parenthesized_header_tokens(tokens: list[str]) -> list[str]:
+    """Rejoin ``Q (nm^-1)``/``Q [nm^-1]`` names split by whitespace."""
+
+    opening_to_closing = {"(": ")", "[": "]", "{": "}"}
+    merged: list[str] = []
+    idx = 0
+    while idx < len(tokens):
+        token = tokens[idx]
+        next_token = tokens[idx + 1] if idx + 1 < len(tokens) else ""
+        opener = next_token[:1]
+        closer = opening_to_closing.get(opener)
+        if closer is not None:
+            end = idx + 1
+            while end < len(tokens) and not tokens[end].endswith(closer):
+                end += 1
+            if end < len(tokens) and _unit_delimiters_are_balanced(
+                " ".join(tokens[idx : end + 1])
+            ):
+                merged.append(" ".join(tokens[idx : end + 1]))
+                idx = end + 1
+                continue
+        merged.append(token)
+        idx += 1
+    return merged
+
+
+def _has_malformed_unit_header_tokens(tokens: list[str]) -> bool:
+    """Detect an unclosed or mismatched delimiter after a named Q column."""
+
+    opening_to_closing = {"(": ")", "[": "]", "{": "}"}
+    closing = set(opening_to_closing.values())
+    for index, token in enumerate(tokens[:-1]):
+        if q_axis_kind(token) != "q":
+            continue
+        next_token = tokens[index + 1]
+        opener = next_token[:1]
+        expected = opening_to_closing.get(opener)
+        if expected is None:
+            continue
+        for candidate in tokens[index + 1 :]:
+            if candidate.endswith(expected):
+                break
+            if any(char in candidate for char in closing):
+                return True
+        else:
+            return True
+    return False
+
+
+def _normalise_inferred_header_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rejoin parenthesized units in a header parsed by pandas.
+
+    A whitespace-delimited header such as ``Q (nm^-1) I`` is read as three
+    column names while its data still have three numeric columns.  The unit
+    token is part of the Q label, not a data column; any remaining numeric
+    column is retained as an unnamed column so it cannot be mistaken for I.
+    """
+
+    columns = [str(column) for column in df.columns]
+    merged = _merge_parenthesized_header_tokens(columns)
+    if merged == columns:
+        return df
+    if len(merged) < len(columns):
+        merged.extend(
+            f"__unnamed_{index}"
+            for index in range(len(merged), len(columns))
+        )
+    else:
+        merged = merged[: len(columns)]
+    out = df.copy()
+    out.columns = merged
+    return out
 
 
 def _read_comment_header_dataframe(path: str | Path) -> pd.DataFrame | None:
@@ -235,6 +434,9 @@ def _read_comment_header_dataframe(path: str | Path) -> pd.DataFrame | None:
             if not candidate or ":" in candidate or "=" in candidate:
                 continue
             tokens = [token for token in re.split(r"[,\s;]+", candidate) if token]
+            if _has_malformed_unit_header_tokens(tokens):
+                raise ValueError("malformed Q-unit delimiter in comment header")
+            tokens = _merge_parenthesized_header_tokens(tokens)
             if len(tokens) >= 2 and any(FLOAT_PATTERN.fullmatch(token) is None for token in tokens):
                 header_candidates.append((idx, tokens, _comment_header_score(tokens)))
             continue
@@ -256,6 +458,21 @@ def _read_comment_header_dataframe(path: str | Path) -> pd.DataFrame | None:
         return None
 
     try:
+        raw_data = pd.read_csv(
+            StringIO(text),
+            sep=r"[,\s;]+",
+            engine="python",
+            comment="#",
+            header=None,
+        )
+        data_columns = int(raw_data.shape[1])
+        if data_columns < len(header_tokens):
+            header_tokens = header_tokens[:data_columns]
+        elif data_columns > len(header_tokens):
+            header_tokens.extend(
+                f"__unnamed_{index}"
+                for index in range(len(header_tokens), data_columns)
+            )
         df = pd.read_csv(
             StringIO(text),
             sep=r"[,\s;]+",
@@ -422,15 +639,23 @@ def read_external_1d_profile(path: str | Path) -> dict[str, Any]:
         {"sep": r"[,\s;]+", "engine": "python", "comment": "#"},
         {"sep": r"[,\s;]+", "engine": "python", "comment": "#", "header": None},
     ]
+    malformed_header_detected = False
 
     for kw in read_trials:
         try:
             df = pd.read_csv(path, encoding="utf-8-sig", **kw)
+            if df is not None and "header" not in kw:
+                if _has_malformed_unit_header_tokens([str(column) for column in df.columns]):
+                    malformed_header_detected = True
+                    continue
+                df = _normalise_inferred_header_columns(df)
             if df is not None and not df.empty and df.shape[1] >= 2:
                 dfs.append(df)
         except Exception as exc:
             errs.append(str(exc))
 
+    if malformed_header_detected:
+        raise ValueError(f"Malformed Q-unit delimiter in {p.name}")
     if not dfs:
         raise ValueError(f"Cannot parse file: {Path(path).name} ({'; '.join(errs[:2])})")
 
@@ -465,7 +690,7 @@ def read_external_1d_profile(path: str | Path) -> dict[str, Any]:
             cols,
             {x_col},
             exact={"i", "intensity", "irel", "iabs", "signal", "count", "counts", "y"},
-            prefixes=("intensity", "signal", "count", "irel", "iabs"),
+            prefixes=("intensity", "signal", "count", "irel", "iabs", "i"),
             suffixes=("intensity",),
         )
         if i_col is None:
@@ -515,6 +740,12 @@ def read_external_1d_profile(path: str | Path) -> dict[str, Any]:
                 "intensity": intensity,
                 "uncertainty": err,
                 "x_col": str(x_col),
+                "x_unit": infer_q_unit_from_column(x_col),
+                "x_unit_raw": (
+                    q_column_unit_hint(x_col)
+                    if infer_q_unit_from_column(x_col) is None
+                    else ""
+                ),
                 "i_col": str(i_col),
                 "err_col": str(err_col) if err_named and err_col is not None else "",
             }
@@ -554,6 +785,7 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
     i_vals: list[float] = []
     e_vals: list[float] = []
     intensity_unit = ""
+    q_unit_records: list[tuple[str, str | None]] = []
 
     for idata in root.iter(f"{ns}Idata"):
         q_el = idata.find(f"{ns}Q")
@@ -561,12 +793,16 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
         if q_el is None or i_el is None:
             continue
         try:
-            q_vals.append(float(q_el.text))
-            i_vals.append(float(i_el.text))
-            if not intensity_unit:
-                intensity_unit = str(i_el.attrib.get("unit", "") or "").strip()
+            q_value = float(q_el.text)
+            i_value = float(i_el.text)
         except (TypeError, ValueError):
             continue
+        q_vals.append(q_value)
+        i_vals.append(i_value)
+        raw_q_unit = str(q_el.attrib.get("unit", "") or "").strip()
+        q_unit_records.append((raw_q_unit, canonicalize_q_unit(raw_q_unit)))
+        if not intensity_unit:
+            intensity_unit = str(i_el.attrib.get("unit", "") or "").strip()
         e_el = idata.find(f"{ns}Idev")
         if e_el is not None and e_el.text:
             try:
@@ -578,6 +814,23 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
 
     if len(q_vals) < 2:
         raise ValueError(f"canSAS XML contains too few data points: {p.name}")
+
+    canonical_by_point = [canonical for _, canonical in q_unit_records]
+    known_q_units = {unit for unit in canonical_by_point if unit is not None}
+    raw_q_unit_tokens = {_unit_token(raw) for raw, _ in q_unit_records}
+    # Canonically equivalent spellings (1/A and 1/angstrom) are consistent;
+    # a mixture of canonical, unknown, or conflicting units is not safe.
+    if len(set(canonical_by_point)) > 1 or (
+        len(known_q_units) == 1 and any(unit is None for unit in canonical_by_point)
+    ):
+        raise ValueError(f"canSAS XML contains inconsistent Q units: {p.name}")
+    if not known_q_units and len(raw_q_unit_tokens) > 1:
+        raise ValueError(f"canSAS XML contains inconsistent Q units: {p.name}")
+    q_unit = next(iter(known_q_units), None)
+    q_unit_raw = next(
+        (raw for raw, canonical in q_unit_records if raw and canonical is None),
+        "",
+    )
 
     x = np.asarray(q_vals, dtype=np.float64)
     intensity = np.asarray(i_vals, dtype=np.float64)
@@ -594,6 +847,8 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
         {
             "x": x[order],
             "x_col": "Q",
+            "x_unit": q_unit,
+            "x_unit_raw": q_unit_raw,
             "i_col": "I",
             "err_col": "Idev",
             "intensity_unit": intensity_unit,
@@ -630,9 +885,11 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
         i_ds = None
         e_ds = None
         intensity_unit = ""
+        q_unit: str | None = None
+        q_unit_raw = ""
 
         def _find_sasdata(group: Any) -> bool:
-            nonlocal q_ds, i_ds, e_ds, intensity_unit
+            nonlocal q_ds, i_ds, e_ds, intensity_unit, q_unit, q_unit_raw
             cls = group.attrs.get("canSAS_class", "")
             if isinstance(cls, bytes):
                 cls = cls.decode()
@@ -640,6 +897,13 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
                 if "Q" in group and "I" in group:
                     q_ds = group["Q"][()]
                     i_ds = group["I"][()]
+                    raw_q_unit = group["Q"].attrs.get(
+                        "units", group["Q"].attrs.get("unit", "")
+                    )
+                    if isinstance(raw_q_unit, bytes):
+                        raw_q_unit = raw_q_unit.decode("utf-8", errors="replace")
+                    q_unit = canonicalize_q_unit(raw_q_unit)
+                    q_unit_raw = str(raw_q_unit or "") if q_unit is None else ""
                     raw_unit = group["I"].attrs.get("units", "")
                     if isinstance(raw_unit, bytes):
                         raw_unit = raw_unit.decode("utf-8", errors="replace")
@@ -706,6 +970,8 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
         {
             "x": x[order],
             "x_col": "Q",
+            "x_unit": q_unit,
+            "x_unit_raw": q_unit_raw,
             "i_col": "I",
             "err_col": "Idev" if e_ds is not None else "",
             "intensity_unit": intensity_unit,

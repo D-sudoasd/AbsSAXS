@@ -24,6 +24,7 @@ import pandas as pd
 import datetime
 from io import StringIO
 import re
+import unicodedata
 import json
 import concurrent.futures
 import threading
@@ -53,6 +54,8 @@ MAX_BATCH_WORKERS = 32
 MAX_OUTPUT_STEM_LENGTH = 120
 DEFAULT_LEGACY_RESUME_ENABLED = False
 WORKBENCH_MIN_SIZE = (900, 600)
+OUTPUT_FORMAT_TOKENS = ("tsv", "csv", "cansas_xml", "nxcansas_h5")
+EXTERNAL_1D_FILE_PATTERN = "*.dat *.txt *.chi *.csv *.xml *.h5 *.hdf5"
 
 logger = logging.getLogger(__name__)
 SUPPORTED_LANGUAGES = ("en", "zh")
@@ -75,7 +78,7 @@ I18N = {
         "t1_run_btn": "\u25b6  Run K Calibration",
         "t1_hist_btn": "K History",
         "t1_report_title": "Analysis Report",
-        "t1_plot_tip": "Plot: dashed=net signal; blue=K-corrected; orange=NIST/reference",
+        "t1_plot_tip": "Plot: dashed=net signal; blue=K-corrected; orange=reference markers",
         "plot_preset_label": "Figure preset:",
         "plot_format_label": "Format:",
         "plot_export_btn": "Export Figure",
@@ -86,7 +89,7 @@ I18N = {
         "tip_plot_format": "PNG/TIFF are high-DPI raster formats; PDF/SVG/EPS are vector formats.",
         "tip_plot_export": "Save the current plot with the selected publication preset and tight bounding box.",
         "t2_guide_title": "Batch Workflow",
-        "t2_guide_text": "① Ensure K, BG/Dark, and poni are ready\n② Select thickness logic\n③ Select one or more integration modes\n④ Add sample files and run dry-check\n⑤ Start batch and review batch_report.csv",
+        "t2_guide_text": "① Ensure K, BG/Dark, and poni are ready\n② Enter the fixed thickness required for formal output\n③ Select one or more integration modes\n④ Add sample files and run dry-check\n⑤ Start batch and review batch_report.csv",
         "t2_mid_title": "Sample Queue",
         "t2_add_btn": "Add Files",
         "t2_add_folder_btn": "Add Folder",
@@ -132,7 +135,7 @@ I18N = {
         "session_error_body": "Failed to read session:\n{err}",
         "session_loaded_title": "Session Loaded",
         # --- Tab1 labels ---
-        "lbl_t1_std_file": "Standard (GC):",
+        "lbl_t1_std_file": "Standard image:",
         "lbl_t1_bg_file": "Background:",
         "lbl_t1_dark_file": "Dark image:",
         "lbl_t1_poni_file": "Geometry (.poni):",
@@ -140,10 +143,10 @@ I18N = {
         "cb_solid_angle": "SolidAngle correction",
         # --- Tab1 hints ---
         "hint_t1_files": "Standard recommended: Glassy Carbon (GC); BG/Dark/poni must share the same geometry and energy.",
-        "hint_t1_phys": "Time(s)=exposure; I0=incident monitor; T=transmission(0–1). Normalisation follows selected I0 mode.",
+        "hint_t1_phys": "Time(s)=exposure; I0=incident monitor; T=transmission (0 < T ≤ 1). Normalisation follows selected I0 mode.",
         # --- Tab1 tooltips ---
         "tip_t1_guide": "Follow steps 1–5 to avoid missing key parameters.",
-        "tip_t1_std_entry": "Standard sample 2D image for absolute calibration (GC recommended).",
+        "tip_t1_std_entry": "Standard sample 2D image for absolute calibration (GC is recommended, but other validated standards are supported).",
         "tip_t1_std_btn": "Browse to select standard file.",
         "tip_t1_bg_entry": "Empty-cell / air / background 2D image for subtraction.",
         "tip_t1_bg_btn": "Browse to select background image.",
@@ -154,18 +157,18 @@ I18N = {
         "tip_t1_poni_btn": "Browse to select .poni file.",
         "tip_t1_std_exp": "Standard exposure time (s).",
         "tip_t1_std_i0": "Standard I0 (monitor reading).",
-        "tip_t1_std_t": "Standard transmission; should be in 0–1.",
+        "tip_t1_std_t": "Standard transmission T; must satisfy 0 < T ≤ 1.",
         "tip_t1_std_thk": "Standard thickness (mm); for volume normalisation.",
         "tip_t1_bg_exp": "Background exposure time (s).",
         "tip_t1_bg_i0": "Background I0 (monitor reading).",
-        "tip_t1_bg_t": "Background transmission.",
+        "tip_t1_bg_t": "Background transmission T; must satisfy 0 < T ≤ 1.",
         "tip_t1_norm_mode": "rate: I0 is count rate; integrated: I0 is integrated counts.",
         "tip_t1_norm_hint": "Choose according to beamline output. Wrong choice adds exposure-related systematic error.",
         "tip_t1_solid_angle": "Shared by Tab1 calibration & Tab2 batch. Must be consistent or K is invalid.",
-        "tip_t1_calibrate": "Run 2D BG subtraction + 1D integration + NIST matching; writes K factor.",
+        "tip_t1_calibrate": "Run 2D background subtraction, 1D integration, and reference matching; writes the K factor.",
         "tip_t1_history": "View historical K factor trend to monitor instrument drift.",
         "tip_t1_report": "Displays calibration key metrics: K, valid points, Q overlap range and dispersion.",
-        "tip_t1_plot": "If the blue line tracks the red dots, K calibration quality is good.",
+        "tip_t1_plot": "If the blue line tracks the orange reference markers, K calibration quality is good.",
         # --- Tab2 labels ---
         "lf_t2_global": "1. Global Settings",
         "lbl_t2_k_factor": "K factor:",
@@ -267,11 +270,11 @@ I18N = {
         "tip_t2_export_cal2d": "Write detector-space absolute-calibrated 2D EDF plus PONI, mask and metadata for pyFAI/pydidas reintegration.",
         "tip_t2_cal2d_flat": "If enabled, flat correction is baked into the exported 2D image. Do not pass flat again to pyFAI.",
         "tip_t2_cal2d_dtype": "Float32 is compact; float64 preserves more numerical precision.",
-        "tip_t2_add": "Multi-select TIFF files.",
+        "tip_t2_add": "Multi-select 2D image files (.tif/.tiff/.edf/.cbf).",
         "tip_t2_add_folder": "Recursively add 2D image files from a folder (.tif/.tiff/.edf/.cbf).",
         "tip_t2_clear": "Clear queue; does not delete files on disk.",
-        "tip_t2_check": "Batch-check each file's exp/mon/T and thickness availability.",
-        "tip_t2_group": "Auto-detect files from the same experimental run (机时) using timestamps. Creates logical groups for output organization and smarter BG/Dark matching.",
+        "tip_t2_check": "Check each file's exp/mon/T, fixed thickness, instrument identity, and enabled fluorescence settings before processing.",
+        "tip_t2_group": "Group queued files by acquisition time, update queue information, and record group count/IDs in the batch manifest; it does not change output routing or BG/Dark matching.",
         "tip_t2_listbox": "Current sample queue.",
         "tip_t2_run": "Run batch. Single-file failure does not abort the batch.",
         "tip_t2_progress": "Batch processing progress.",
@@ -291,7 +294,7 @@ I18N = {
         "lf_t3_execution": "2. Execution Strategy",
         "cb_t3_resume": "Resume (skip existing output)",
         "cb_t3_overwrite": "Force overwrite",
-        "lbl_t3_formats": "Supported: .dat .txt .chi .csv (need X & I columns; Error optional)",
+        "lbl_t3_formats": "Supported: .dat .txt .chi .csv .xml .h5 .hdf5 (need X & I columns; Error optional)",
         "lf_t3_raw_params": "3. Raw 1D Correction Params (raw pipeline)",
         "btn_t3_meta_from_batch": "Generate metadata from Tab2 report",
         "cb_t3_meta_thk": "Prefer thk_mm from metadata",
@@ -301,7 +304,7 @@ I18N = {
         "lbl_t3_outdir": "Output dir:",
         # --- Tab3 hints ---
         "hint_t3_global": "K from Tab1. Choose pipeline, then formula. Raw pipeline uses exp/I0/T and BG1D/Dark1D.",
-        "hint_t3_execution": "Recommend dry-check first. Resume to avoid redundant overwrites.",
+        "hint_t3_execution": "Run Dry Check first. Exists-only resume is disabled for formal output.",
         "hint_t3_raw": "Only active when pipeline = Raw 1D. Can use Tab2's batch_report.csv or metadata.csv directly.",
         "hint_t3_queue": "Click 'Dry Check' to verify column parsing for each file.",
         # --- Tab3 tooltips ---
@@ -321,7 +324,7 @@ I18N = {
         "tip_t3_meta_from_batch": "One-click: generate Tab3 metadata.csv from Tab2 batch_report.csv; auto-fill path.",
         "tip_t3_meta_thk": "If enabled and sample's metadata has thk_mm, overrides fixed thickness.",
         "tip_t3_sync_bg": "When enabled, Tab3 BG params auto-update from Tab1/global, avoiding stale values.",
-        "tip_t3_add": "Multi-select external integration result files.",
+        "tip_t3_add": "Multi-select external relative 1D integration result files.",
         "tip_t3_clear": "Clear queue only; does not delete files on disk.",
         "tip_t3_check": "Check column recognition, point count, and X-axis type inference.",
         "tip_t3_listbox": "Current external 1D file list for conversion.",
@@ -416,6 +419,33 @@ I18N = {
         # --- File row labels (Tab3) ---
         "lbl_t3_bg1d_file": "BG 1D file:",
         "lbl_t3_dark1d_file": "Dark 1D file:",
+        "lbl_t3_meta_csv": "Metadata CSV:",
+        "status_ready": "Ready",
+        "tip_browse_file": "Browse for a file.",
+        "tip_browse_dir": "Browse for a directory.",
+        "tip_output_format": "Choose the exported file format. The internal format token is kept stable for reproducible reports; canSAS XML and NXcanSAS HDF5 require a Q (Å⁻¹) axis.",
+        "lbl_t2_fluo_method": "Method:",
+        "lbl_t2_fluo_f0": "F0 (cm⁻¹):",
+        "lbl_t2_fluo_f0_uncertainty": "u(F0):",
+        "lbl_t2_fluo_beta": "β:",
+        "lbl_t2_fluo_beta_uncertainty": "u(β):",
+        "lbl_t2_fluo_qmin": "qmin (Å⁻¹):",
+        "lbl_t2_fluo_qmax": "qmax (Å⁻¹):",
+        "lbl_t2_fluo_file": "Measured F(q) file:",
+        "lbl_t3_fluo_beta_uncertainty": "u(β):",
+        "lbl_t3_fluo_qmin": "qmin (Å⁻¹):",
+        "lbl_t3_fluo_qmax": "qmax (Å⁻¹):",
+        "tip_t2_fluo_method": "Fluorescence model: constant, high-q estimate, or measured absolute F(q).",
+        "tip_t2_fluo_f0": "Constant fluorescence F0 in cm⁻¹; required for the constant method.",
+        "tip_t2_fluo_f0_uncertainty": "Standard uncertainty u(F0) in cm⁻¹; leave blank when unknown.",
+        "tip_t2_fluo_beta": "Scale factor β applied to the fluorescence term; must be > 0.",
+        "tip_t2_fluo_beta_uncertainty": "Standard uncertainty u(β); leave blank when unknown.",
+        "tip_t2_fluo_qmin": "Lower bound of the high-q estimation window in Å⁻¹.",
+        "tip_t2_fluo_qmax": "Upper bound of the high-q estimation window in Å⁻¹; must exceed qmin.",
+        "tip_t2_fluo_file": "Measured fluorescence F(q) must be an absolute Q profile in cm⁻¹.",
+        "tip_t3_fluo_beta_uncertainty": "Standard uncertainty u(β); leave blank when unknown.",
+        "tip_t3_fluo_qmin": "Lower bound of the high-q estimation window in Å⁻¹.",
+        "tip_t3_fluo_qmax": "Upper bound of the high-q estimation window in Å⁻¹; must exceed qmin.",
         # --- Report messages ---
         "rpt_start_calib": "Start calibration (robust mode)...",
         "rpt_i0_norm_mode": "I0 normalisation mode: {mode} (norm={formula})",
@@ -478,7 +508,7 @@ I18N = {
         "t1_run_btn": "\u25b6  运行 K 因子标定",
         "t1_hist_btn": "K 历史",
         "t1_report_title": "分析报告（建议重点看 Std Dev）",
-        "t1_plot_tip": "图示说明：虚线=净信号；蓝线=K 校正后；橙色=NIST/参考点",
+        "t1_plot_tip": "图示说明：虚线=净信号；蓝线=K 校正后；橙色=参考点",
         "plot_preset_label": "图像预设:",
         "plot_format_label": "格式:",
         "plot_export_btn": "导出图像",
@@ -489,7 +519,7 @@ I18N = {
         "tip_plot_format": "PNG/TIFF 是高分辨率位图；PDF/SVG/EPS 是矢量格式。",
         "tip_plot_export": "按当前预设保存图像，并自动使用 tight bounding box 避免标签裁切。",
         "t2_guide_title": "批处理工作流（推荐顺序）",
-        "t2_guide_text": "① 先确认 K 因子和 BG/暗场/poni 已就绪\n② 选择厚度逻辑（自动/固定）\n③ 选择一个或多个积分模式（可同时勾选）\n④ 添加样品文件并点击预检查\n⑤ 启动批处理并查看 batch_report.csv",
+        "t2_guide_text": "① 先确认 K 因子和 BG/暗场/poni 已就绪\n② 输入正式输出所需的固定厚度\n③ 选择一个或多个积分模式（可同时勾选）\n④ 添加样品文件并点击预检查\n⑤ 启动批处理并查看 batch_report.csv",
         "t2_mid_title": "样品队列",
         "t2_add_btn": "添加文件",
         "t2_add_folder_btn": "添加文件夹",
@@ -535,7 +565,7 @@ I18N = {
         "session_error_body": "读取会话失败:\n{err}",
         "session_loaded_title": "会话已加载",
         # --- Tab1 labels ---
-        "lbl_t1_std_file": "标准样 (GC):",
+        "lbl_t1_std_file": "标准样图像:",
         "lbl_t1_bg_file": "背景图像:",
         "lbl_t1_dark_file": "暗场图像:",
         "lbl_t1_poni_file": "几何文件 (.poni):",
@@ -543,10 +573,10 @@ I18N = {
         "cb_solid_angle": "SolidAngle修正",
         # --- Tab1 hints ---
         "hint_t1_files": "标准样建议用玻璃碳（GC）；背景/暗场/poni 应与样品保持同一实验几何与能量。",
-        "hint_t1_phys": "Time(s)=曝光时间；I0=入射强度监测值；T=透过率(0~1)。归一化按下方 I0 语义选择公式。",
+        "hint_t1_phys": "Time(s)=曝光时间；I0=入射强度监测值；T=透过率（0 < T ≤ 1）。归一化按下方 I0 语义选择公式。",
         # --- Tab1 tooltips ---
         "tip_t1_guide": "按 1~5 步执行，基本不会漏关键参数。",
-        "tip_t1_std_entry": "用于绝对强度标定的标准样二维图像（推荐 GC）。",
+        "tip_t1_std_entry": "用于绝对强度标定的标准样二维图像（推荐 GC，也支持其他已验证标准样）。",
         "tip_t1_std_btn": "点击选择标准样文件。",
         "tip_t1_bg_entry": "空样品/空气或本底散射图像，用于 2D 本底扣除。",
         "tip_t1_bg_btn": "点击选择背景图像。",
@@ -557,18 +587,18 @@ I18N = {
         "tip_t1_poni_btn": "点击选择 .poni 文件。",
         "tip_t1_std_exp": "标准样曝光时间（秒）。",
         "tip_t1_std_i0": "标准样 I0（监测器读数）。",
-        "tip_t1_std_t": "标准样透过率，建议在 0~1 之间。",
+        "tip_t1_std_t": "标准样透过率 T，必须满足 0 < T ≤ 1。",
         "tip_t1_std_thk": "标准样厚度（mm），用于体积归一化。",
         "tip_t1_bg_exp": "背景图曝光时间（秒）。",
         "tip_t1_bg_i0": "背景图 I0（监测器读数）。",
-        "tip_t1_bg_t": "背景图透过率。",
+        "tip_t1_bg_t": "背景图透过率 T，必须满足 0 < T ≤ 1。",
         "tip_t1_norm_mode": "rate: I0 是每秒计数率；integrated: I0 是曝光积分计数。",
         "tip_t1_norm_hint": "请按线站实际输出选择。选错会引入曝光时间相关系统误差。",
         "tip_t1_solid_angle": "Tab1标定与Tab2批处理共用此设置。两者必须一致，否则 K 因子无效。",
-        "tip_t1_calibrate": "执行 2D 扣背景 + 1D 积分 + NIST 匹配，自动写入 K 因子。",
+        "tip_t1_calibrate": "执行 2D 扣背景、1D 积分和参考曲线匹配，自动写入 K 因子。",
         "tip_t1_history": "查看历史 K 因子趋势，监控仪器漂移。",
         "tip_t1_report": "会显示标定关键指标：K、有效点数、Q 重叠区间和离散度。",
-        "tip_t1_plot": "若蓝线与红点趋势一致，通常说明 K 标定质量较好。",
+        "tip_t1_plot": "若蓝线与橙色参考点趋势一致，通常说明 K 标定质量较好。",
         # --- Tab2 labels ---
         "lf_t2_global": "1. 全局配置",
         "lbl_t2_k_factor": "K 因子:",
@@ -662,11 +692,11 @@ I18N = {
         "tip_t2_export_cal2d": "导出 detector-space 绝对强度2D图、PONI、mask 和 metadata，供 pyFAI/pydidas 后续重新积分。",
         "tip_t2_cal2d_flat": "开启后 flat 会烧入导出2D图；后续 pyFAI 不应再次传入 flat。",
         "tip_t2_cal2d_dtype": "float32 文件更小；float64 保留更多数值精度。",
-        "tip_t2_add": "支持多选 TIFF 文件。",
+        "tip_t2_add": "支持多选二维图像（.tif/.tiff/.edf/.cbf）。",
         "tip_t2_add_folder": "递归添加文件夹中的二维图像（.tif/.tiff/.edf/.cbf）。",
         "tip_t2_clear": "清空队列，不会删除磁盘文件。",
-        "tip_t2_check": "批量检查每个文件的 exp/mon/T 和厚度可用性。",
-        "tip_t2_group": "根据时间戳自动识别同一次机时（实验轮次）的文件。可用于按组输出子目录和优先匹配同组BG/Dark。",
+        "tip_t2_check": "批量检查每个文件的 exp/mon/T、固定厚度、仪器身份和已启用的荧光设置。",
+        "tip_t2_group": "按采集时间对队列文件分组，更新队列信息，并在 batch manifest 中记录分组数量/ID；不会改变输出路由或 BG/Dark 匹配。",
         "tip_t2_listbox": "显示当前待处理样品列表。",
         "tip_t2_run": "执行批处理。单文件失败不会中断整批。",
         "tip_t2_progress": "显示批处理进度。",
@@ -686,7 +716,7 @@ I18N = {
         "lf_t3_execution": "2. 执行策略",
         "cb_t3_resume": "断点续跑(跳过已存在输出)",
         "cb_t3_overwrite": "强制覆盖输出",
-        "lbl_t3_formats": "支持格式: .dat .txt .chi .csv（列至少包含 X 与 I；Error 可选）",
+        "lbl_t3_formats": "支持格式: .dat .txt .chi .csv .xml .h5 .hdf5（列至少包含 X 与 I；Error 可选）",
         "lf_t3_raw_params": "3. 原始1D校正参数（raw流程）",
         "btn_t3_meta_from_batch": "由 Tab2 报告生成 metadata",
         "cb_t3_meta_thk": "优先使用 metadata 中的 thk_mm",
@@ -696,7 +726,7 @@ I18N = {
         "lbl_t3_outdir": "输出根目录:",
         # --- Tab3 hints ---
         "hint_t3_global": "K 来自 Tab1。先选流程，再选公式。原始1D流程会用到 exp/I0/T 与 BG1D/Dark1D。",
-        "hint_t3_execution": "建议先预检查。可断点续跑，避免重复覆盖。",
+        "hint_t3_execution": "正式运行前先做预检查。正式输出不启用仅按存在性跳过的续跑。",
         "hint_t3_raw": "仅当流程=原始1D完整校正时生效。可直接使用 Tab2 的 batch_report.csv 或 metadata.csv。",
         "hint_t3_queue": '建议先点"预检查"确认每个文件的列解析情况。',
         # --- Tab3 tooltips ---
@@ -716,7 +746,7 @@ I18N = {
         "tip_t3_meta_from_batch": "从 Tab2 的 batch_report.csv 一键生成 Tab3 可用 metadata.csv，并自动回填路径。",
         "tip_t3_meta_thk": "开启后，若某样品 metadata 含 thk_mm，则覆盖固定厚度。",
         "tip_t3_sync_bg": "开启后 Tab3 的 BG 参数会随 Tab1/全局变化自动更新，避免陈旧值。",
-        "tip_t3_add": "支持多选外部积分结果文件。",
+        "tip_t3_add": "支持多选外部 relative 1D 积分结果文件。",
         "tip_t3_clear": "仅清空队列，不删除磁盘文件。",
         "tip_t3_check": "检查列识别、点数和坐标类型推断。",
         "tip_t3_listbox": "当前待转换的外部1D文件列表。",
@@ -811,6 +841,33 @@ I18N = {
         # --- File row labels (Tab3) ---
         "lbl_t3_bg1d_file": "BG 1D 文件:",
         "lbl_t3_dark1d_file": "Dark 1D 文件:",
+        "lbl_t3_meta_csv": "Metadata CSV:",
+        "status_ready": "就绪",
+        "tip_browse_file": "点击选择文件。",
+        "tip_browse_dir": "点击选择文件夹。",
+        "tip_output_format": "选择导出文件格式；内部格式 token 保持稳定，便于复现和读取报告。canSAS XML 和 NXcanSAS HDF5 要求 Q (Å⁻¹) 轴。",
+        "lbl_t2_fluo_method": "方法:",
+        "lbl_t2_fluo_f0": "F0 (cm⁻¹):",
+        "lbl_t2_fluo_f0_uncertainty": "u(F0):",
+        "lbl_t2_fluo_beta": "β:",
+        "lbl_t2_fluo_beta_uncertainty": "u(β):",
+        "lbl_t2_fluo_qmin": "qmin (Å⁻¹):",
+        "lbl_t2_fluo_qmax": "qmax (Å⁻¹):",
+        "lbl_t2_fluo_file": "实测 F(q) 文件:",
+        "lbl_t3_fluo_beta_uncertainty": "u(β):",
+        "lbl_t3_fluo_qmin": "qmin (Å⁻¹):",
+        "lbl_t3_fluo_qmax": "qmax (Å⁻¹):",
+        "tip_t2_fluo_method": "荧光模型：常数、高 q 估计或实测绝对 F(q)。",
+        "tip_t2_fluo_f0": "常数荧光 F0，单位 cm⁻¹；constant 方法必须填写。",
+        "tip_t2_fluo_f0_uncertainty": "F0 的标准不确定度 u(F0)，单位 cm⁻¹；未知时留空。",
+        "tip_t2_fluo_beta": "荧光项缩放因子 β，必须 > 0。",
+        "tip_t2_fluo_beta_uncertainty": "β 的标准不确定度 u(β)，未知时留空。",
+        "tip_t2_fluo_qmin": "高 q 估计窗口下限，单位 Å⁻¹。",
+        "tip_t2_fluo_qmax": "高 q 估计窗口上限，单位 Å⁻¹；必须大于 qmin。",
+        "tip_t2_fluo_file": "实测荧光 F(q) 必须是单位 cm⁻¹ 的绝对 Q 曲线。",
+        "tip_t3_fluo_beta_uncertainty": "β 的标准不确定度 u(β)，未知时留空。",
+        "tip_t3_fluo_qmin": "高 q 估计窗口下限，单位 Å⁻¹。",
+        "tip_t3_fluo_qmax": "高 q 估计窗口上限，单位 Å⁻¹；必须大于 qmin。",
         # --- Report messages ---
         "rpt_start_calib": "开始标定（稳健模式）...",
         "rpt_i0_norm_mode": "I0 归一化模式: {mode} (norm={formula})",
@@ -1316,11 +1373,13 @@ except Exception:
 try:
     from saxsabs.core.fluorescence_subtraction import (
         combine_sequential_standard_uncertainties,
+        parse_fluorescence_method,
         subtract_fluorescence,
     )
 except Exception:
     subtract_fluorescence = None
     combine_sequential_standard_uncertainties = None
+    parse_fluorescence_method = None
 
 try:
     from saxsabs.core.execution_policy import (
@@ -1390,6 +1449,15 @@ except Exception:
     _core_profile_intensity = None
     _core_profile_uncertainty = None
     _core_read_external_1d_profile = None
+
+try:
+    from saxsabs.io.parsers import (
+        canonicalize_q_unit as _core_canonicalize_q_unit,
+        q_axis_kind as _core_q_axis_kind,
+    )
+except Exception:
+    _core_canonicalize_q_unit = None
+    _core_q_axis_kind = None
 
 
 def _profile_intensity(profile):
@@ -1775,6 +1843,7 @@ class SAXSAbsWorkbenchApp:
         if self.language not in SUPPORTED_LANGUAGES:
             self.language = "en"
         self.root.title(self.tr("app_title"))
+        geometry = None
         if choose_initial_window_geometry is not None:
             geometry = choose_initial_window_geometry(
                 self.root.winfo_screenwidth(),
@@ -1785,13 +1854,14 @@ class SAXSAbsWorkbenchApp:
             self.root.geometry(geometry.tk_geometry)
         else:
             self.root.geometry("960x620")
-        self.root.minsize(*WORKBENCH_MIN_SIZE)
+        self.root.minsize(*self._window_min_size_for_geometry(geometry))
         
         # Apply shared scientific plot defaults globally.
         saxs_mpl_style.apply_nature_style("raw_inspection")
         
         self.set_style()
         self._tooltips = []
+        self._output_format_combos = []
         
         # Top bar for theme toggle
         top_bar = ttk.Frame(self.root)
@@ -1857,7 +1927,7 @@ class SAXSAbsWorkbenchApp:
         # --- Status bar ---
         status_sep = ttk.Separator(self.root, orient="horizontal")
         status_sep.pack(fill="x", side="bottom")
-        self._status_var = tk.StringVar(value="Ready")
+        self._status_var = tk.StringVar(value=self.tr("status_ready"))
         self._status_bar = ttk.Label(
             self.root, textvariable=self._status_var, style="Status.TLabel", anchor="w"
         )
@@ -1875,6 +1945,15 @@ class SAXSAbsWorkbenchApp:
 
     def _lang_button_text(self):
         return self.tr("lang_toggle_to_zh") if self.language == "en" else self.tr("lang_toggle_to_en")
+
+    @staticmethod
+    def _window_min_size_for_geometry(geometry):
+        if geometry is None:
+            return WORKBENCH_MIN_SIZE
+        return (
+            min(WORKBENCH_MIN_SIZE[0], int(geometry.width)),
+            min(WORKBENCH_MIN_SIZE[1], int(geometry.height)),
+        )
 
     def toggle_language(self):
         self.language = "zh" if self.language == "en" else "en"
@@ -1911,6 +1990,40 @@ class SAXSAbsWorkbenchApp:
                     lbl.configure(text=f"{self.tr('hint_prefix')}: {self.tr(key)}")
                 except Exception:
                     pass
+        if hasattr(self, "t1_std_combo") and hasattr(self, "t1_std_type"):
+            standard_options = (
+                "opt_std_srm3600",
+                "opt_std_water",
+                "opt_std_lupolen",
+                "opt_std_custom",
+            )
+            values = [self.tr(key) for key in standard_options]
+            self.t1_std_combo.configure(values=values)
+            self._t1_std_option_map = {
+                self.tr("opt_std_srm3600"): "SRM3600",
+                self.tr("opt_std_water"): "Water_20C",
+                self.tr("opt_std_lupolen"): "Lupolen",
+                self.tr("opt_std_custom"): "Custom",
+            }
+            standard_key = str(self.t1_std_type.get() or "SRM3600")
+            display_by_key = {
+                "SRM3600": self.tr("opt_std_srm3600"),
+                "Water_20C": self.tr("opt_std_water"),
+                "Lupolen": self.tr("opt_std_lupolen"),
+                "Custom": self.tr("opt_std_custom"),
+            }
+            self.t1_std_combo.set(display_by_key.get(standard_key, values[0]))
+        self._refresh_output_format_combos()
+        if hasattr(self, "_status_var"):
+            try:
+                current_status = str(self._status_var.get())
+                if current_status in {
+                    I18N["en"].get("status_ready"),
+                    I18N["zh"].get("status_ready"),
+                }:
+                    self._status_var.set(self.tr("status_ready"))
+            except Exception:
+                pass
         self.refresh_help_text()
         self.refresh_queue_status()
         self.refresh_external_1d_status()
@@ -1919,6 +2032,52 @@ class SAXSAbsWorkbenchApp:
         if not hasattr(self, "_i18n_widgets"):
             self._i18n_widgets = []
         self._i18n_widgets.append((widget, key))
+
+    def _output_format_labels(self):
+        return [self.tr(f"opt_fmt_{token}") for token in OUTPUT_FORMAT_TOKENS]
+
+    def _output_format_label(self, token):
+        token = str(token or "tsv").strip().lower()
+        if token not in OUTPUT_FORMAT_TOKENS:
+            token = "tsv"
+        return self.tr(f"opt_fmt_{token}")
+
+    def _configure_output_format_combo(self, combo, token_var):
+        """Show localized format labels while retaining stable internal tokens."""
+        display_var = tk.StringVar(value=self._output_format_label(token_var.get()))
+        combo.configure(textvariable=display_var, values=self._output_format_labels())
+
+        def _on_format_selected(_event=None):
+            selected = str(display_var.get())
+            for token in OUTPUT_FORMAT_TOKENS:
+                if selected == self.tr(f"opt_fmt_{token}"):
+                    token_var.set(token)
+                    break
+            else:
+                # A stale label should never leak into the processing contract.
+                token_var.set("tsv")
+                display_var.set(self._output_format_label("tsv"))
+
+        combo.bind("<<ComboboxSelected>>", _on_format_selected, add="+")
+        if not hasattr(self, "_output_format_combos"):
+            self._output_format_combos = []
+        self._output_format_combos.append((combo, token_var, display_var))
+        return display_var
+
+    def _refresh_output_format_combos(self):
+        alive = []
+        for combo, token_var, display_var in getattr(self, "_output_format_combos", []):
+            try:
+                combo.configure(values=self._output_format_labels())
+                token = str(token_var.get() or "tsv").strip().lower()
+                if token not in OUTPUT_FORMAT_TOKENS:
+                    token = "tsv"
+                    token_var.set(token)
+                display_var.set(self._output_format_label(token))
+                alive.append((combo, token_var, display_var))
+            except Exception:
+                pass
+        self._output_format_combos = alive
 
     def _fmt_queue_info(self, total, uniq):
         if total == uniq:
@@ -2928,8 +3087,8 @@ class SAXSAbsWorkbenchApp:
 
         # 透过率归一化策略：
         # 1) 明确百分号/percent/pct -> 按百分数处理
-        # 2) 1.0~2.0 视为轻微漂移，夹紧到 1.0（避免把 1.25 误判成 1.25%）
-        # 3) 2.0~100 视作百分数字面量（如 85 -> 0.85）
+        # 2) Unhinted 1<T<2 is ambiguous and is rejected below.
+        # 3) 2<=T<=100 is treated as a percent literal (e.g. 85 -> 0.85).
         has_pct_hint = (
             "%" in raw_s
             or "percent" in raw_s
@@ -3229,10 +3388,11 @@ class SAXSAbsWorkbenchApp:
 
     def extract_instrument_signature(self, filepath, header_dict=None, shape=None):
         meta = self.normalize_header_dict(header_dict)
-        if not meta:
+        if not meta or shape is None:
             try:
                 loaded = _workbench_load_detector_image(filepath, dtype=None)
-                meta = self.normalize_header_dict(loaded.header)
+                if not meta:
+                    meta = self.normalize_header_dict(loaded.header)
                 if shape is None:
                     shape = tuple(loaded.data.shape)
             except Exception:
@@ -3256,10 +3416,30 @@ class SAXSAbsWorkbenchApp:
         if en_kev is None and wl_a and wl_a > 0:
             en_kev = HC_KEV_A / wl_a
 
+        detector = None
+        if det_raw is not None:
+            detector_text = str(det_raw).strip()
+            detector = detector_text or None
+        image_shape = None
+        if shape is not None:
+            try:
+                image_shape = tuple(int(value) for value in shape)
+            except (TypeError, ValueError):
+                image_shape = tuple(shape) if isinstance(shape, (tuple, list)) else None
+
         return {
             "distance_m": dist_m,
             "pixel1_m": px1_m,
             "pixel2_m": px2_m,
+            "wavelength_a": wl_a,
+            "energy_kev": en_kev,
+            "detector": detector,
+            "shape": image_shape,
+            "path": str(filepath),
+            "observed_fields": {
+                "wavelength_a": wl_a is not None and np.isfinite(wl_a) and wl_raw is not None,
+                "energy_kev": en_kev is not None and np.isfinite(en_kev) and en_raw is not None,
+            },
         }
 
     def relative_diff(self, a, b):
@@ -3386,7 +3566,7 @@ class SAXSAbsWorkbenchApp:
         sum_w = np.zeros_like(r0, dtype=np.float64)
         sum_iw = np.zeros_like(r0, dtype=np.float64)
         sum_sw2 = np.zeros_like(r0, dtype=np.float64)
-        has_sigma = False
+        sigma_unknown = np.zeros_like(r0, dtype=bool)
 
         for res in results:
             rr = np.asarray(res.radial, dtype=np.float64)
@@ -3394,37 +3574,38 @@ class SAXSAbsWorkbenchApp:
                 raise ValueError("分段扇区积分的 q 网格不一致，无法合并。")
 
             i = np.asarray(res.intensity, dtype=np.float64)
+            if i.shape != r0.shape:
+                raise ValueError("分段扇区积分的强度数组形状不一致，无法合并。")
             w = getattr(res, "count", None)
             if w is None:
-                w = np.where(np.isfinite(i), 1.0, 0.0)
+                w = np.ones_like(i, dtype=np.float64)
             else:
                 w = np.asarray(w, dtype=np.float64)
                 if w.shape != r0.shape:
-                    w = np.where(np.isfinite(i), 1.0, 0.0)
-                w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
-                w = np.maximum(w, 0.0)
+                    w = np.zeros_like(i, dtype=np.float64)
+            valid = np.isfinite(i) & np.isfinite(w) & (w > 0.0)
+            w_eff = np.where(valid, w, 0.0)
 
-            i_num = np.nan_to_num(i, nan=0.0, posinf=0.0, neginf=0.0)
-            sum_iw += i_num * w
-            sum_w += w
+            sum_iw += np.where(valid, i, 0.0) * w_eff
+            sum_w += w_eff
 
             sigma = getattr(res, "sigma", None)
-            if sigma is not None:
+            if sigma is None:
+                sigma_unknown |= valid
+            else:
                 s = np.asarray(sigma, dtype=np.float64)
-                if s.shape == r0.shape:
-                    term = np.nan_to_num(s, nan=0.0, posinf=0.0, neginf=0.0) * w
+                if s.shape != r0.shape:
+                    sigma_unknown |= valid
+                else:
+                    sigma_valid = np.isfinite(s) & (s >= 0.0)
+                    sigma_unknown |= valid & ~sigma_valid
+                    term = np.where(valid & sigma_valid, s * w_eff, 0.0)
                     sum_sw2 += term * term
-                    has_sigma = True
 
         i_merge = np.divide(sum_iw, sum_w, out=np.full_like(sum_iw, np.nan), where=sum_w > 0)
-        sigma_merge = None
-        if has_sigma:
-            sigma_merge = np.divide(
-                np.sqrt(sum_sw2),
-                sum_w,
-                out=np.full_like(sum_w, np.nan),
-                where=sum_w > 0,
-            )
+        sigma_merge = np.full_like(sum_w, np.nan)
+        sigma_valid = (sum_w > 0) & ~sigma_unknown
+        sigma_merge[sigma_valid] = np.sqrt(sum_sw2[sigma_valid]) / sum_w[sigma_valid]
 
         return SimpleNamespace(
             radial=r0,
@@ -3479,22 +3660,56 @@ class SAXSAbsWorkbenchApp:
         ref = sigs[0]
         fallback = self.session_geometry_fallback if isinstance(self.session_geometry_fallback, dict) else {}
         if fallback:
-            for key in ("wavelength_a", "distance_m", "pixel1_m", "pixel2_m", "energy_kev"):
-                if ref.get(key) is None and fallback.get(key) is not None:
-                    ref[key] = fallback.get(key)
+            for signature in sigs:
+                for key in ("wavelength_a", "distance_m", "pixel1_m", "pixel2_m", "energy_kev"):
+                    if signature.get(key) is None and fallback.get(key) is not None:
+                        signature[key] = fallback.get(key)
 
         issues = []
+        for signature in sigs:
+            if "error" in signature:
+                path_name = Path(signature.get("path", "")).name
+                issues.append(
+                    f"{path_name}: 无法读取文件头 ({signature['error']})"
+                )
+        if "error" in ref:
+            return issues
+
+        for signature in sigs:
+            observed = signature.get("observed_fields", {})
+            if not (
+                observed.get("wavelength_a") and observed.get("energy_kev")
+            ):
+                continue
+            wavelength_a = signature.get("wavelength_a")
+            energy_kev = signature.get("energy_kev")
+            if wavelength_a is None or energy_kev is None:
+                continue
+            product = float(wavelength_a) * float(energy_kev)
+            relative_error = abs(product - HC_KEV_A) / HC_KEV_A
+            if relative_error > tol:
+                p = Path(signature.get("path", "")).name
+                issues.append(
+                    f"{p}: 波长与能量内部不一致，E·λ={product:.6g} keV·A "
+                    f"(期望 {HC_KEV_A:.6g})"
+                )
+
         for s in sigs[1:]:
             p = Path(s.get("path", "")).name
             if "error" in s:
-                issues.append(f"{p}: 无法读取文件头 ({s['error']})")
                 continue
 
-            if ref.get("shape") and s.get("shape") and ref["shape"] != s["shape"]:
-                issues.append(f"{p}: 图像尺寸不一致 {s['shape']} != {ref['shape']}")
+            ref_shape = ref.get("shape")
+            sample_shape = s.get("shape")
+            if ref_shape != sample_shape and (ref_shape is not None or sample_shape is not None):
+                issues.append(f"{p}: 图像尺寸不一致 {sample_shape} != {ref_shape}")
 
-            if ref.get("detector") and s.get("detector") and ref["detector"] != s["detector"]:
-                issues.append(f"{p}: 探测器型号不一致 {s['detector']} != {ref['detector']}")
+            ref_detector = ref.get("detector")
+            sample_detector = s.get("detector")
+            if ref_detector != sample_detector and (
+                ref_detector is not None or sample_detector is not None
+            ):
+                issues.append(f"{p}: 探测器型号不一致 {sample_detector} != {ref_detector}")
 
             for key, label in [
                 ("energy_kev", "能量(keV)"),
@@ -3503,7 +3718,13 @@ class SAXSAbsWorkbenchApp:
                 ("pixel1_m", "pixel1(m)"),
                 ("pixel2_m", "pixel2(m)"),
             ]:
-                rd = self.relative_diff(s.get(key), ref.get(key))
+                sample_value = s.get(key)
+                ref_value = ref.get(key)
+                if sample_value is None or ref_value is None:
+                    if sample_value != ref_value:
+                        issues.append(f"{p}: {label} 信息缺失或不一致")
+                    continue
+                rd = self.relative_diff(sample_value, ref_value)
                 if rd is not None and rd > tol:
                     issues.append(
                         f"{p}: {label} 偏差 {rd*100:.3f}% 超过阈值 {tol*100:.3f}%"
@@ -3512,12 +3733,41 @@ class SAXSAbsWorkbenchApp:
         if poni_path:
             try:
                 ai = pyFAI.load(poni_path)
-                ai_wl_a = ai.wavelength * 1e10 if getattr(ai, "wavelength", None) else None
-                if ai_wl_a and ref.get("wavelength_a"):
-                    rd = self.relative_diff(ai_wl_a, ref["wavelength_a"])
+                def finite_positive(value):
+                    try:
+                        number = float(value)
+                    except (TypeError, ValueError):
+                        return None
+                    return number if np.isfinite(number) and number > 0 else None
+
+                poni_values = {
+                    "wavelength_a": (
+                        finite_positive(getattr(ai, "wavelength", None)) * 1e10
+                        if finite_positive(getattr(ai, "wavelength", None)) is not None
+                        else None
+                    ),
+                    "distance_m": finite_positive(getattr(ai, "dist", None)),
+                }
+                detector = getattr(ai, "detector", None)
+                poni_values["pixel1_m"] = finite_positive(
+                    getattr(detector, "pixel1", None)
+                )
+                poni_values["pixel2_m"] = finite_positive(
+                    getattr(detector, "pixel2", None)
+                )
+                for key, label, unit in (
+                    ("wavelength_a", "波长", "A"),
+                    ("distance_m", "样探距", "m"),
+                    ("pixel1_m", "pixel1", "m"),
+                    ("pixel2_m", "pixel2", "m"),
+                ):
+                    poni_value = poni_values[key]
+                    header_value = ref.get(key)
+                    rd = self.relative_diff(poni_value, header_value)
                     if rd is not None and rd > tol:
                         issues.append(
-                            f"poni 波长与样品头信息不一致: {ai_wl_a:.6g} A vs {ref['wavelength_a']:.6g} A"
+                            f"poni {label}与样品头信息不一致: "
+                            f"{poni_value:.6g} {unit} vs {header_value:.6g} {unit}"
                         )
             except Exception as e:
                 issues.append(f"无法读取 poni 做一致性检查: {e}")
@@ -3570,6 +3820,19 @@ class SAXSAbsWorkbenchApp:
     def mode_output_path(self, save_dirs, mode, out_stem):
         ext = ".chi" if mode == "radial_chi" else ".dat"
         return save_dirs[mode] / f"{out_stem}{ext}"
+
+    @staticmethod
+    def validate_output_format_for_axis(output_format, x_label):
+        """Fail early when a structured format cannot represent the profile axis."""
+        fmt = str(output_format or "tsv").strip().lower()
+        if fmt not in OUTPUT_FORMAT_TOKENS:
+            raise ValueError(f"Unsupported output format: {output_format}")
+        if fmt in {"cansas_xml", "nxcansas_h5"} and str(x_label) != "Q_A^-1":
+            raise ValueError(
+                f"输出格式 {fmt} 要求 Q_A^-1 轴数据，当前为 {x_label}；"
+                "请改用 TSV/CSV 或选择 Q 轴输入。"
+            )
+        return fmt
 
     def resolve_profile_output_path(self, out_path, output_format="tsv"):
         out_path = Path(out_path)
@@ -3706,6 +3969,7 @@ class SAXSAbsWorkbenchApp:
     ):
         # Origin-friendly text table: first row is column names, tab-separated.
         out_path = Path(out_path)
+        output_format = self.validate_output_format_for_axis(output_format, x_label)
         final_path = self.resolve_profile_output_path(out_path, output_format)
         if run_policy is not None:
             if resolve_output_path_for_write is not None:
@@ -3732,11 +3996,6 @@ class SAXSAbsWorkbenchApp:
         if uncertainty_metadata:
             profile_metadata.update(dict(uncertainty_metadata))
         compatibility_error = e_arr if combined_arr is None else combined_arr
-
-        if output_format in ("cansas_xml", "nxcansas_h5") and str(x_label) != "Q_A^-1":
-            raise ValueError(
-                f"输出格式 {output_format} 仅支持 Q_A^-1 轴数据，当前为 {x_label}。"
-            )
 
         if output_format == "cansas_xml":
             if write_cansas1d_xml is None:
@@ -4065,36 +4324,38 @@ class SAXSAbsWorkbenchApp:
         # Not packed initially — shown when Water is selected
 
         # Reference curve file row (hidden by default)
-        self.t1_ref_row = self.add_file_row(f_files, self.tr("lbl_t1_std_ref_file"), self.t1_std_ref_path, "*.dat *.txt *.csv *.xml")
+        self.t1_ref_row = self.add_file_row(f_files, "lbl_t1_std_ref_file", self.t1_std_ref_path, "*.dat *.txt *.csv *.xml")
         self.t1_ref_row["frame"].pack_forget()  # hidden by default
 
-        row_std = self.add_file_row(f_files, self.tr("lbl_t1_std_file"), self.t1_files["std"], "*.tif", self.on_load_std_t1)
+        row_std = self.add_file_row(
+            f_files,
+            "lbl_t1_std_file",
+            self.t1_files["std"],
+            "*.tif *.tiff *.edf *.cbf",
+            self.on_load_std_t1,
+        )
         self.add_tooltip(row_std["entry"], "tip_t1_std_entry")
-        self.add_tooltip(row_std["button"], "tip_t1_std_btn")
 
-        row_bg = self.add_file_row(f_files, self.tr("lbl_t1_bg_file"), self.t1_files["bg"], "*.tif", self.on_load_bg_t1)
+        row_bg = self.add_file_row(f_files, "lbl_t1_bg_file", self.t1_files["bg"], "*.tif *.tiff *.edf *.cbf", self.on_load_bg_t1)
         self.add_tooltip(row_bg["entry"], "tip_t1_bg_entry")
-        self.add_tooltip(row_bg["button"], "tip_t1_bg_btn")
         btn_bg_multi = ttk.Button(row_bg["frame"], text="+", width=3, command=self.select_multi_bg_t1)
         btn_bg_multi.pack(side="left", padx=(2, 0))
         self.add_tooltip(btn_bg_multi, "tip_t1_bg_multi")
 
-        row_dark = self.add_file_row(f_files, self.tr("lbl_t1_dark_file"), self.t1_files["dark"], "*.tif")
+        row_dark = self.add_file_row(f_files, "lbl_t1_dark_file", self.t1_files["dark"], "*.tif *.tiff *.edf *.cbf")
         self.add_tooltip(row_dark["entry"], "tip_t1_dark_entry")
-        self.add_tooltip(row_dark["button"], "tip_t1_dark_btn")
 
-        row_poni = self.add_file_row(f_files, self.tr("lbl_t1_poni_file"), self.t1_files["poni"], "*.poni")
+        row_poni = self.add_file_row(f_files, "lbl_t1_poni_file", self.t1_files["poni"], "*.poni")
         self.add_tooltip(row_poni["entry"], "tip_t1_poni_entry")
-        self.add_tooltip(row_poni["button"], "tip_t1_poni_btn")
         row_mask_t1 = self.add_file_row(
             f_files,
-            self.tr("lbl_t2_mask"),
+            "lbl_t2_mask",
             self.global_vars["mask_path"],
             "*.tif *.tiff *.edf *.npy",
         )
         row_flat_t1 = self.add_file_row(
             f_files,
-            self.tr("lbl_t2_flat"),
+            "lbl_t2_flat",
             self.global_vars["flat_path"],
             "*.tif *.tiff *.edf *.npy",
         )
@@ -4446,7 +4707,7 @@ class SAXSAbsWorkbenchApp:
         e_sec_max = ttk.Entry(f_sec, textvariable=self.t2_sec_max, width=4)
         e_sec_max.pack(side="left")
         ttk.Label(f_sec, text="] deg").pack(side="left")
-        btn_sec_preview = ttk.Button(f_sec, text=self.tr("btn_t2_iq_preview"), width=8, command=self.preview_iq_window_t2)
+        btn_sec_preview = ttk.Button(f_sec, text=self.tr("btn_t2_iq_preview"), command=self.preview_iq_window_t2)
         btn_sec_preview.pack(side="left", padx=(4, 0))
         self._register_i18n_widget(btn_sec_preview, "btn_t2_iq_preview")
 
@@ -4479,7 +4740,7 @@ class SAXSAbsWorkbenchApp:
         e_qmax = ttk.Entry(f_tex, textvariable=self.t2_rad_qmax, width=4)
         e_qmax.pack(side="left")
         ttk.Label(f_tex, text="] A⁻¹").pack(side="left")
-        btn_chi_preview = ttk.Button(f_tex, text=self.tr("btn_t2_chi_preview"), width=10, command=self.preview_ichi_window_t2)
+        btn_chi_preview = ttk.Button(f_tex, text=self.tr("btn_t2_chi_preview"), command=self.preview_ichi_window_t2)
         btn_chi_preview.pack(side="left", padx=(4, 0))
         self._register_i18n_widget(btn_chi_preview, "btn_t2_chi_preview")
 
@@ -4529,8 +4790,8 @@ class SAXSAbsWorkbenchApp:
         cb_pol.configure(command=_sync_pol_entry_state)
         _sync_pol_entry_state()
 
-        row_mask = self.add_file_row(c4, self.tr("lbl_t2_mask"), self.t2_mask_path, "*.tif *.tiff *.edf *.npy")
-        row_flat = self.add_file_row(c4, self.tr("lbl_t2_flat"), self.t2_flat_path, "*.tif *.tiff *.edf *.npy")
+        row_mask = self.add_file_row(c4, "lbl_t2_mask", self.t2_mask_path, "*.tif *.tiff *.edf *.npy")
+        row_flat = self.add_file_row(c4, "lbl_t2_flat", self.t2_flat_path, "*.tif *.tiff *.edf *.npy")
 
         self.add_tooltip(cb_solid, "tip_t2_solid_angle")
         self.add_tooltip(cb_err, "tip_t2_error_model")
@@ -4647,28 +4908,74 @@ class SAXSAbsWorkbenchApp:
         )
         cb_fluo2.pack(anchor="w")
         self._register_i18n_widget(cb_fluo2, "cb_t2_fluo_enable")
-        row_fluo2 = ttk.Frame(fluo2)
-        row_fluo2.pack(fill="x")
-        ttk.Combobox(
-            row_fluo2,
+        row_fluo2_m = ttk.Frame(fluo2)
+        row_fluo2_m.pack(fill="x")
+        lbl_fluo2_m = ttk.Label(row_fluo2_m, text=self.tr("lbl_t2_fluo_method"))
+        lbl_fluo2_m.pack(side="left", padx=(3, 2))
+        self._register_i18n_widget(lbl_fluo2_m, "lbl_t2_fluo_method")
+        cb_fluo2_method = ttk.Combobox(
+            row_fluo2_m,
             textvariable=self.t2_fluo_method,
             values=["constant", "high_q_mean", "high_q_median", "measured"],
             width=16,
             state="readonly",
-        ).pack(side="left", padx=3)
-        ttk.Entry(row_fluo2, textvariable=self.t2_fluo_f0, width=8).pack(side="left", padx=3)
-        ttk.Entry(row_fluo2, textvariable=self.t2_fluo_f0_uncertainty, width=8).pack(
-            side="left", padx=3
         )
-        ttk.Entry(row_fluo2, textvariable=self.t2_fluo_beta, width=6).pack(side="left", padx=3)
-        ttk.Entry(row_fluo2, textvariable=self.t2_fluo_beta_uncertainty, width=6).pack(
-            side="left", padx=3
+        cb_fluo2_method.pack(side="left", padx=(0, 6))
+        lbl_fluo2_f0 = ttk.Label(row_fluo2_m, text=self.tr("lbl_t2_fluo_f0"))
+        lbl_fluo2_f0.pack(side="left", padx=(2, 2))
+        self._register_i18n_widget(lbl_fluo2_f0, "lbl_t2_fluo_f0")
+        e_fluo2_f0 = ttk.Entry(row_fluo2_m, textvariable=self.t2_fluo_f0, width=8)
+        e_fluo2_f0.pack(side="left", padx=(0, 5))
+        lbl_fluo2_f0u = ttk.Label(
+            row_fluo2_m, text=self.tr("lbl_t2_fluo_f0_uncertainty")
         )
-        ttk.Entry(row_fluo2, textvariable=self.t2_fluo_qmin, width=6).pack(side="left", padx=2)
-        ttk.Entry(row_fluo2, textvariable=self.t2_fluo_qmax, width=6).pack(side="left", padx=2)
-        self.add_file_row(
-            fluo2, self.tr("lbl_t3_fluo_file"), self.t2_fluo_path, "*.dat *.txt *.csv *.xml"
+        lbl_fluo2_f0u.pack(side="left", padx=(2, 2))
+        self._register_i18n_widget(lbl_fluo2_f0u, "lbl_t2_fluo_f0_uncertainty")
+        e_fluo2_f0u = ttk.Entry(
+            row_fluo2_m, textvariable=self.t2_fluo_f0_uncertainty, width=8
         )
+        e_fluo2_f0u.pack(side="left", padx=(0, 3))
+
+        row_fluo2_b = ttk.Frame(fluo2)
+        row_fluo2_b.pack(fill="x")
+        lbl_fluo2_b = ttk.Label(row_fluo2_b, text=self.tr("lbl_t2_fluo_beta"))
+        lbl_fluo2_b.pack(side="left", padx=(3, 2))
+        self._register_i18n_widget(lbl_fluo2_b, "lbl_t2_fluo_beta")
+        e_fluo2_b = ttk.Entry(row_fluo2_b, textvariable=self.t2_fluo_beta, width=8)
+        e_fluo2_b.pack(side="left", padx=(0, 8))
+        lbl_fluo2_bu = ttk.Label(
+            row_fluo2_b, text=self.tr("lbl_t2_fluo_beta_uncertainty")
+        )
+        lbl_fluo2_bu.pack(side="left", padx=(2, 2))
+        self._register_i18n_widget(lbl_fluo2_bu, "lbl_t2_fluo_beta_uncertainty")
+        e_fluo2_bu = ttk.Entry(
+            row_fluo2_b, textvariable=self.t2_fluo_beta_uncertainty, width=8
+        )
+        e_fluo2_bu.pack(side="left", padx=(0, 3))
+
+        row_fluo2_w = ttk.Frame(fluo2)
+        row_fluo2_w.pack(fill="x")
+        lbl_fluo2_qmin = ttk.Label(row_fluo2_w, text=self.tr("lbl_t2_fluo_qmin"))
+        lbl_fluo2_qmin.pack(side="left", padx=(3, 2))
+        self._register_i18n_widget(lbl_fluo2_qmin, "lbl_t2_fluo_qmin")
+        e_fluo2_qmin = ttk.Entry(row_fluo2_w, textvariable=self.t2_fluo_qmin, width=8)
+        e_fluo2_qmin.pack(side="left", padx=(0, 8))
+        lbl_fluo2_qmax = ttk.Label(row_fluo2_w, text=self.tr("lbl_t2_fluo_qmax"))
+        lbl_fluo2_qmax.pack(side="left", padx=(2, 2))
+        self._register_i18n_widget(lbl_fluo2_qmax, "lbl_t2_fluo_qmax")
+        e_fluo2_qmax = ttk.Entry(row_fluo2_w, textvariable=self.t2_fluo_qmax, width=8)
+        e_fluo2_qmax.pack(side="left", padx=(0, 3))
+        self.add_tooltip(cb_fluo2_method, "tip_t2_fluo_method")
+        self.add_tooltip(e_fluo2_f0, "tip_t2_fluo_f0")
+        self.add_tooltip(e_fluo2_f0u, "tip_t2_fluo_f0_uncertainty")
+        self.add_tooltip(e_fluo2_b, "tip_t2_fluo_beta")
+        self.add_tooltip(e_fluo2_bu, "tip_t2_fluo_beta_uncertainty")
+        self.add_tooltip(e_fluo2_qmin, "tip_t2_fluo_qmin")
+        self.add_tooltip(e_fluo2_qmax, "tip_t2_fluo_qmax")
+        row_fluo2_file = self.add_file_row(
+            fluo2, "lbl_t2_fluo_file", self.t2_fluo_path, EXTERNAL_1D_FILE_PATTERN
+        )
+        self.add_tooltip(row_fluo2_file["entry"], "tip_t2_fluo_file")
         ttk.Label(fluo2, textvariable=self.t2_fluo_status, style="Hint.TLabel").pack(anchor="w")
 
         row_fmt2 = ttk.Frame(c5)
@@ -4678,13 +4985,12 @@ class SAXSAbsWorkbenchApp:
         self._register_i18n_widget(lbl_ofmt2, "lbl_output_format")
         self.t2_fmt_combo = ttk.Combobox(
             row_fmt2,
-            textvariable=self.t2_output_format,
-            values=["tsv", "csv", "cansas_xml", "nxcansas_h5"],
             width=18,
             state="readonly",
         )
-        self.t2_fmt_combo.current(0)
         self.t2_fmt_combo.pack(side="left", padx=5)
+        self._configure_output_format_combo(self.t2_fmt_combo, self.t2_output_format)
+        self.add_tooltip(self.t2_fmt_combo, "tip_output_format")
 
         row_cal2d = ttk.Frame(c5)
         row_cal2d.pack(fill="x", pady=(2, 0))
@@ -4774,7 +5080,7 @@ class SAXSAbsWorkbenchApp:
         btn_run.pack(fill="x", ipady=8)  # strongest visual weight — this is the main action for most users
         self.prog_bar = ttk.Progressbar(bot_frame, mode="determinate")
         self.prog_bar.pack(fill="x", pady=5)
-        row_out_dir = self.add_dir_row(bot_frame, self.tr("lbl_t2_outdir"), self.t2_output_root)
+        row_out_dir = self.add_dir_row(bot_frame, "lbl_t2_outdir", self.t2_output_root)
         self.add_tooltip(btn_run, "tip_t2_run")
         self.add_tooltip(self.prog_bar, "tip_t2_progress")
         self.add_tooltip(row_out_dir["entry"], "tip_t2_outdir")
@@ -4864,6 +5170,7 @@ class SAXSAbsWorkbenchApp:
         self.t3_overwrite = tk.BooleanVar(value=False)
         self.t3_queue_info = tk.StringVar(value=self._fmt_queue_info(0, 0))
         self.t3_out_hint = tk.StringVar(value=f"{self.tr('out_auto_prefix')}: processed_external_1d_abs")
+        self.t3_output_format = tk.StringVar(value="tsv")
 
         f_guide = ttk.LabelFrame(p, text=self.tr("t3_guide_title"), style="Group.TLabelframe")
         self._register_i18n_widget(f_guide, "t3_guide_title")
@@ -4979,6 +5286,15 @@ class SAXSAbsWorkbenchApp:
         )
         lbl_fmt.pack(anchor="w")
         self._register_i18n_widget(lbl_fmt, "lbl_t3_formats")
+        fmt_row = ttk.Frame(c2)
+        fmt_row.pack(fill="x", pady=(4, 2))
+        lbl_ofmt = ttk.Label(fmt_row, text=self.tr("lbl_output_format"), anchor="e")
+        lbl_ofmt.pack(side="left")
+        self._register_i18n_widget(lbl_ofmt, "lbl_output_format")
+        self.t3_fmt_combo = ttk.Combobox(fmt_row, width=18, state="readonly")
+        self.t3_fmt_combo.pack(side="left", padx=5)
+        self._configure_output_format_combo(self.t3_fmt_combo, self.t3_output_format)
+        self.add_tooltip(self.t3_fmt_combo, "tip_output_format")
         self.add_tooltip(cb_resume, "tip_t3_resume")
         self.add_tooltip(cb_overwrite, "tip_t3_overwrite")
 
@@ -4987,9 +5303,9 @@ class SAXSAbsWorkbenchApp:
         self._register_i18n_widget(c3, "lf_t3_raw_params")
         self.add_hint(c3, "hint_t3_raw", wraplength=420)
 
-        row_meta = self.add_file_row(c3, "Metadata CSV:", self.t3_meta_csv_path, "*.csv")
-        row_bg = self.add_file_row(c3, self.tr("lbl_t3_bg1d_file"), self.t3_bg1d_path, "*.dat *.txt *.chi *.csv")
-        row_dark = self.add_file_row(c3, self.tr("lbl_t3_dark1d_file"), self.t3_dark1d_path, "*.dat *.txt *.chi *.csv")
+        row_meta = self.add_file_row(c3, "lbl_t3_meta_csv", self.t3_meta_csv_path, "*.csv")
+        row_bg = self.add_file_row(c3, "lbl_t3_bg1d_file", self.t3_bg1d_path, EXTERNAL_1D_FILE_PATTERN)
+        row_dark = self.add_file_row(c3, "lbl_t3_dark1d_file", self.t3_dark1d_path, EXTERNAL_1D_FILE_PATTERN)
 
         row_meta_ops = ttk.Frame(c3)
         row_meta_ops.pack(fill="x", pady=(1, 1))
@@ -5060,7 +5376,7 @@ class SAXSAbsWorkbenchApp:
         cb_buf = ttk.Checkbutton(buf_frame, text=self.tr("cb_t3_buffer_enable"), variable=self.t3_buffer_enabled)
         cb_buf.pack(anchor="w", padx=3, pady=2)
         self._register_i18n_widget(cb_buf, "cb_t3_buffer_enable")
-        self.add_file_row(buf_frame, self.tr("lbl_t3_buffer_file"), self.t3_buffer_path, "*.dat *.txt *.csv *.xml")
+        self.add_file_row(buf_frame, "lbl_t3_buffer_file", self.t3_buffer_path, EXTERNAL_1D_FILE_PATTERN)
         row_alpha = ttk.Frame(buf_frame)
         row_alpha.pack(fill="x", pady=1)
         lbl_alpha = ttk.Label(row_alpha, text=self.tr("lbl_t3_alpha"), anchor="e")
@@ -5114,54 +5430,65 @@ class SAXSAbsWorkbenchApp:
             state="readonly",
         )
         self.t3_fluo_method_combo.pack(side="left", padx=5)
+        self.add_tooltip(self.t3_fluo_method_combo, "tip_t2_fluo_method")
         lbl_fluo_f0 = ttk.Label(row_fluo_m, text=self.tr("lbl_t3_fluo_f0"))
         lbl_fluo_f0.pack(side="left", padx=(8, 0))
         self._register_i18n_widget(lbl_fluo_f0, "lbl_t3_fluo_f0")
-        ttk.Entry(row_fluo_m, textvariable=self.t3_fluo_f0, width=8).pack(side="left", padx=5)
+        e_fluo_f0 = ttk.Entry(row_fluo_m, textvariable=self.t3_fluo_f0, width=8)
+        e_fluo_f0.pack(side="left", padx=5)
+        self.add_tooltip(e_fluo_f0, "tip_t2_fluo_f0")
         lbl_fluo_f0u = ttk.Label(row_fluo_m, text=self.tr("lbl_t3_fluo_f0_uncertainty"))
         lbl_fluo_f0u.pack(side="left")
         self._register_i18n_widget(lbl_fluo_f0u, "lbl_t3_fluo_f0_uncertainty")
-        ttk.Entry(row_fluo_m, textvariable=self.t3_fluo_f0_uncertainty, width=8).pack(
-            side="left", padx=5
+        e_fluo_f0u = ttk.Entry(
+            row_fluo_m, textvariable=self.t3_fluo_f0_uncertainty, width=8
         )
+        e_fluo_f0u.pack(side="left", padx=5)
+        self.add_tooltip(e_fluo_f0u, "tip_t2_fluo_f0_uncertainty")
         row_fluo_b = ttk.Frame(fluo_frame)
         row_fluo_b.pack(fill="x", pady=1)
         lbl_fluo_b = ttk.Label(row_fluo_b, text=self.tr("lbl_t3_fluo_beta"))
         lbl_fluo_b.pack(side="left")
         self._register_i18n_widget(lbl_fluo_b, "lbl_t3_fluo_beta")
-        ttk.Entry(row_fluo_b, textvariable=self.t3_fluo_beta, width=8).pack(side="left", padx=5)
-        ttk.Entry(row_fluo_b, textvariable=self.t3_fluo_beta_uncertainty, width=8).pack(
-            side="left", padx=5
+        e_fluo_b = ttk.Entry(row_fluo_b, textvariable=self.t3_fluo_beta, width=8)
+        e_fluo_b.pack(side="left", padx=5)
+        self.add_tooltip(e_fluo_b, "tip_t2_fluo_beta")
+        lbl_fluo_bu = ttk.Label(
+            row_fluo_b, text=self.tr("lbl_t3_fluo_beta_uncertainty")
         )
-        lbl_fluo_w = ttk.Label(row_fluo_b, text=self.tr("lbl_t3_fluo_window"))
-        lbl_fluo_w.pack(side="left", padx=(8, 0))
+        lbl_fluo_bu.pack(side="left", padx=(4, 0))
+        self._register_i18n_widget(lbl_fluo_bu, "lbl_t3_fluo_beta_uncertainty")
+        e_fluo_bu = ttk.Entry(
+            row_fluo_b, textvariable=self.t3_fluo_beta_uncertainty, width=8
+        )
+        e_fluo_bu.pack(side="left", padx=5)
+        self.add_tooltip(e_fluo_bu, "tip_t3_fluo_beta_uncertainty")
+
+        row_fluo_w = ttk.Frame(fluo_frame)
+        row_fluo_w.pack(fill="x", pady=1)
+        lbl_fluo_w = ttk.Label(row_fluo_w, text=self.tr("lbl_t3_fluo_window"))
+        lbl_fluo_w.pack(side="left")
         self._register_i18n_widget(lbl_fluo_w, "lbl_t3_fluo_window")
-        ttk.Entry(row_fluo_b, textvariable=self.t3_fluo_qmin, width=8).pack(side="left", padx=2)
-        ttk.Entry(row_fluo_b, textvariable=self.t3_fluo_qmax, width=8).pack(side="left", padx=2)
-        self.add_file_row(
-            fluo_frame, self.tr("lbl_t3_fluo_file"), self.t3_fluo_path, "*.dat *.txt *.csv *.xml"
+        lbl_fluo_qmin = ttk.Label(row_fluo_w, text=self.tr("lbl_t3_fluo_qmin"))
+        lbl_fluo_qmin.pack(side="left", padx=(4, 2))
+        self._register_i18n_widget(lbl_fluo_qmin, "lbl_t3_fluo_qmin")
+        e_fluo_qmin = ttk.Entry(row_fluo_w, textvariable=self.t3_fluo_qmin, width=8)
+        e_fluo_qmin.pack(side="left", padx=(0, 6))
+        self.add_tooltip(e_fluo_qmin, "tip_t3_fluo_qmin")
+        lbl_fluo_qmax = ttk.Label(row_fluo_w, text=self.tr("lbl_t3_fluo_qmax"))
+        lbl_fluo_qmax.pack(side="left", padx=(2, 2))
+        self._register_i18n_widget(lbl_fluo_qmax, "lbl_t3_fluo_qmax")
+        e_fluo_qmax = ttk.Entry(row_fluo_w, textvariable=self.t3_fluo_qmax, width=8)
+        e_fluo_qmax.pack(side="left")
+        self.add_tooltip(e_fluo_qmax, "tip_t3_fluo_qmax")
+        row_fluo_file = self.add_file_row(
+            fluo_frame, "lbl_t3_fluo_file", self.t3_fluo_path, EXTERNAL_1D_FILE_PATTERN
         )
+        self.add_tooltip(row_fluo_file["entry"], "tip_t2_fluo_file")
         self.add_hint(fluo_frame, "hint_t3_fluo", wraplength=720)
         ttk.Label(fluo_frame, textvariable=self.t3_fluo_status, style="Hint.TLabel").pack(
             anchor="w", padx=3
         )
-
-        # ---- Output format selector ----
-        self.t3_output_format = tk.StringVar(value="tsv")
-        fmt_row = ttk.Frame(buf_frame)
-        fmt_row.pack(fill="x", pady=(4, 2))
-        lbl_ofmt = ttk.Label(fmt_row, text=self.tr("lbl_output_format"), anchor="e")
-        lbl_ofmt.pack(side="left")
-        self._register_i18n_widget(lbl_ofmt, "lbl_output_format")
-        self.t3_fmt_combo = ttk.Combobox(
-            fmt_row,
-            textvariable=self.t3_output_format,
-            values=["tsv", "csv", "cansas_xml", "nxcansas_h5"],
-            width=18,
-            state="readonly",
-        )
-        self.t3_fmt_combo.current(0)
-        self.t3_fmt_combo.pack(side="left", padx=5)
 
         mid = ttk.LabelFrame(p, text=self.tr("t3_mid_title"), style="Group.TLabelframe")
         self._register_i18n_widget(mid, "t3_mid_title")
@@ -5208,7 +5535,7 @@ class SAXSAbsWorkbenchApp:
         btn_run.pack(fill="x", ipady=7)
         self.t3_prog_bar = ttk.Progressbar(bot, mode="determinate")
         self.t3_prog_bar.pack(fill="x", pady=5)
-        row_out_dir = self.add_dir_row(bot, self.tr("lbl_t3_outdir"), self.t3_output_root)
+        row_out_dir = self.add_dir_row(bot, "lbl_t3_outdir", self.t3_output_root)
         ttk.Label(bot, textvariable=self.t3_out_hint, style="Hint.TLabel").pack(anchor="w")
         self.add_tooltip(btn_run, "tip_t3_run")
         self.add_tooltip(self.t3_prog_bar, "tip_t3_progress")
@@ -5279,7 +5606,7 @@ class SAXSAbsWorkbenchApp:
 
     def add_external_1d_files(self):
         fs = filedialog.askopenfilenames(
-            filetypes=[("1D Files", "*.dat *.txt *.chi *.csv"), ("All Files", "*.*")]
+            filetypes=[("1D Files", EXTERNAL_1D_FILE_PATTERN), ("All Files", "*.*")]
         )
         for f in fs:
             if f not in self.t3_files:
@@ -6031,11 +6358,21 @@ class SAXSAbsWorkbenchApp:
                     "raw 流程下禁止荧光扣除；荧光必须作用在绝对强度标度上。"
                 )
             method = str(getattr(self, f"{source}_fluo_method").get()).strip().lower()
+            if parse_fluorescence_method is not None:
+                parse_fluorescence_method(method)
+            elif method not in {"constant", "high_q_mean", "high_q_median", "measured"}:
+                raise ValueError(
+                    "Fluorescence method must be constant, high_q_mean, high_q_median, or measured"
+                )
             beta = float(getattr(self, f"{source}_fluo_beta").get())
             if not np.isfinite(beta) or beta <= 0:
                 raise ValueError("Fluorescence beta must be finite and > 0")
             f0_text = str(getattr(self, f"{source}_fluo_f0").get()).strip()
             f0 = float(f0_text) if f0_text else None
+            if method == "constant" and (
+                f0 is None or not np.isfinite(f0) or f0 < 0
+            ):
+                raise ValueError("constant fluorescence method requires finite F0 >= 0")
             f0_uncertainty = self.parse_optional_nonnegative_uncertainty(
                 getattr(self, f"{source}_fluo_f0_uncertainty").get(),
                 label="Fluorescence F0 uncertainty",
@@ -6048,6 +6385,19 @@ class SAXSAbsWorkbenchApp:
                 getattr(self, f"{source}_fluo_qmin").get(),
                 getattr(self, f"{source}_fluo_qmax").get(),
             )
+            if method in {"high_q_mean", "high_q_median"}:
+                if f0 is not None:
+                    raise ValueError("high_q fluorescence methods estimate F0; leave F0 blank")
+                if high_q_window is None:
+                    raise ValueError("high_q fluorescence methods require qmin and qmax")
+            elif method == "constant" and high_q_window is not None:
+                raise ValueError("constant fluorescence method does not accept a high-q window")
+            elif method == "measured" and (
+                f0 is not None or f0_uncertainty is not None or high_q_window is not None
+            ):
+                raise ValueError(
+                    "measured fluorescence uses the supplied absolute F(q); leave F0 and high-q fields blank"
+                )
             path_text = str(getattr(self, f"{source}_fluo_path").get()).strip()
             profile = None
             digest = None
@@ -6064,8 +6414,15 @@ class SAXSAbsWorkbenchApp:
                     raise RuntimeError("fluorescence-state validation is unavailable")
                 fluo_path = Path(path_text).expanduser().resolve()
                 profile = self.prepare_external_profile_axis(
-                    fluo_path, self.read_external_1d_profile(fluo_path)
+                    fluo_path,
+                    self.read_external_1d_profile(fluo_path),
+                    mode="auto" if source == "t2" else None,
+                    wavelength_a="" if source == "t2" else None,
                 )
+                if profile.get("x_label") != "Q_A^-1":
+                    raise ValueError(
+                        "Measured fluorescence requires an explicit Q axis in A^-1; Chi is not allowed."
+                    )
                 require_absolute_input_for_fluorescence_subtraction(
                     profile, profile_name="Fluorescence"
                 )
@@ -6273,7 +6630,11 @@ class SAXSAbsWorkbenchApp:
         selected = (
             str(mode).strip().lower()
             if mode is not None
-            else str(self.t3_x_mode.get()).strip().lower()
+            else str(
+                getattr(self, "t3_x_mode", None).get()
+                if getattr(self, "t3_x_mode", None) is not None
+                else "auto"
+            ).strip().lower()
         )
         if selected not in {"auto", "q_a^-1", "two_theta_deg", "chi_deg"}:
             raise ValueError(f"未知外部 X轴模式: {selected}")
@@ -6281,34 +6642,94 @@ class SAXSAbsWorkbenchApp:
         x = np.asarray(profile.get("x"), dtype=np.float64)
         if x.ndim != 1 or x.size < 1 or not np.all(np.isfinite(x)):
             raise ValueError("外部 X轴必须是一维有限数值。")
-        raw_name = str(profile.get("x_col", "")).strip().lower()
-        raw_name = raw_name.replace("å", "angstrom").replace("Å", "angstrom")
-        name = re.sub(r"[^a-z0-9]+", "", raw_name)
+
+        def canonical_q_unit(value):
+            if _core_canonicalize_q_unit is not None:
+                canonical = _core_canonicalize_q_unit(value)
+                if canonical == "A^-1":
+                    return "a^-1"
+                if canonical == "nm^-1":
+                    return "nm^-1"
+                return None
+
+            text = unicodedata.normalize("NFKC", str(value or "").strip().lower())
+            text = (
+                text.replace("å", "angstrom")
+                .replace("Å", "angstrom")
+                .replace("⁻", "-")
+                .replace("−", "-")
+                .replace("–", "-")
+            )
+            text = re.sub(r"^\s*q(?:\s*[_:\-]?\s*)?", "", text, count=1)
+            has_inverse = bool(
+                re.search(r"(?<!\d)1\s*/", text)
+                or re.search(r"\^?\s*-\s*1", text)
+                or re.search(r"(?<![a-z])(?:inverse|inv)(?![a-z])", text)
+                or re.search(r"(?<![a-z])(?:inverse|inv)(?:angstrom|nm|a)(?![a-z])", text)
+            )
+            if not has_inverse:
+                return None
+            base = re.sub(r"^(?:inverse|inv)", "", text)
+            if "angstrom" in base or re.search(r"(?<![a-z])a(?![a-z])", base):
+                return "a^-1"
+            if re.search(r"(?<![a-z])nm(?![a-z])", base):
+                return "nm^-1"
+            return None
+
+        raw_name = str(profile.get("x_col", "")).strip()
+        normalized_name = unicodedata.normalize("NFKC", raw_name).lower()
+        normalized_name = (
+            normalized_name.replace("å", "angstrom")
+            .replace("Å", "angstrom")
+            .replace("−", "-")
+            .replace("–", "-")
+        )
+        name = re.sub(r"[^a-z0-9]+", "", normalized_name)
         fname = Path(path).name.lower()
         named_axis = None
         q_unit = None
-        if "2theta" in name or "twotheta" in name:
-            named_axis = "two_theta_deg"
-        elif "chi" in name:
-            named_axis = "chi_deg"
-        elif name.startswith("q"):
-            named_axis = "q_a^-1"
-            if name in {"qnm1", "q1nm", "qinversenm", "qinvnm"}:
-                q_unit = "nm^-1"
-            elif name in {
-                "qa1",
-                "q1a",
-                "qangstrom1",
-                "q1angstrom",
-                "qinverseangstrom",
-                "qinvangstrom",
-            }:
-                q_unit = "a^-1"
-            else:
+        axis_kind = (
+            _core_q_axis_kind(raw_name)
+            if _core_q_axis_kind is not None
+            else (
+                "two_theta"
+                if "2theta" in name or "twotheta" in name
+                else "chi"
+                if "chi" in name
+                else "q"
+                if name.startswith("q")
+                else "unknown"
+            )
+        )
+        profile_unit = profile.get("x_unit")
+        raw_unit_hint = profile.get("x_unit_raw")
+        if profile_unit is not None and str(profile_unit).strip():
+            q_unit = canonical_q_unit(profile_unit)
+            if q_unit is None:
                 raise ValueError(
-                    f"Q轴单位未知或歧义: {profile.get('x_col', '')!r}；"
-                    "必须明确为 q_A^-1 或 q_nm^-1。"
+                    f"外部 Q 轴单位不受支持: {profile_unit!r}；"
+                    "仅支持明确的 A^-1 或 nm^-1。"
                 )
+            # The parser's x_unit contract is stronger than a misleading column
+            # name or filename suffix: it explicitly identifies a Q axis.
+            named_axis = "q_a^-1"
+        elif axis_kind == "q" or (
+            axis_kind == "unknown"
+            and raw_unit_hint is not None
+            and str(raw_unit_hint).strip()
+        ):
+            unit_source = raw_unit_hint if str(raw_unit_hint or "").strip() else raw_name
+            q_unit = canonical_q_unit(unit_source)
+            if q_unit is None:
+                raise ValueError(
+                    f"Q轴单位未知或歧义: {raw_name!r}；"
+                    "必须明确为 A^-1/nm^-1 的倒数单位（^-1、1/unit 或 inverse/inv）。"
+                )
+            named_axis = "q_a^-1"
+        elif axis_kind == "two_theta":
+            named_axis = "two_theta_deg"
+        elif axis_kind == "chi":
+            named_axis = "chi_deg"
 
         # A semantic column header is stronger evidence than a file suffix.
         detected = named_axis
@@ -6330,6 +6751,10 @@ class SAXSAbsWorkbenchApp:
         if selected == "chi_deg":
             return x, "Chi_deg", "none"
         if selected == "q_a^-1":
+            if q_unit is None:
+                raise ValueError(
+                    "Q轴单位未知或歧义；必须明确为 A^-1 或 nm^-1。"
+                )
             if q_unit == "nm^-1":
                 return x / 10.0, "Q_A^-1", "q_nm^-1_to_q_a^-1"
             return x, "Q_A^-1", "none"
@@ -6349,9 +6774,14 @@ class SAXSAbsWorkbenchApp:
         q = 4.0 * np.pi * np.sin(np.deg2rad(x / 2.0)) / wl_a
         return q, "Q_A^-1", "two_theta_deg_to_q_a^-1"
 
-    def prepare_external_profile_axis(self, path, profile):
+    def prepare_external_profile_axis(self, path, profile, *, mode=None, wavelength_a=None):
         converted = dict(profile)
-        x, label, conversion = self.resolve_external_x_axis(path, converted)
+        x, label, conversion = self.resolve_external_x_axis(
+            path,
+            converted,
+            mode=mode,
+            wavelength_a=wavelength_a,
+        )
         converted["x"] = x
         converted["x_label"] = label
         converted["x_conversion"] = conversion
@@ -6819,6 +7249,11 @@ class SAXSAbsWorkbenchApp:
         risky_files = 0
         pipeline_mode = self.t3_pipeline_mode.get().strip().lower()
         mode = self.t3_corr_mode.get()
+        output_format = str(
+            getattr(self, "t3_output_format", None).get()
+            if getattr(self, "t3_output_format", None) is not None
+            else "tsv"
+        ).strip().lower()
         k, k_parse_error = self._read_k_for_preflight()
         try:
             thk_mm = float(self.t3_fixed_thk.get())
@@ -6829,6 +7264,7 @@ class SAXSAbsWorkbenchApp:
         k_trust_error = None
         thickness_gate_error = None
         buffer_gate_error = None
+        fluorescence_gate_error = None
         resume_gate_error = None
         active_calibration_context = None
 
@@ -6863,7 +7299,6 @@ class SAXSAbsWorkbenchApp:
         fluo_var = getattr(self, "t3_fluo_enabled", None)
         fluorescence_enabled = bool(fluo_var.get()) if fluo_var is not None else False
         buffer_info = {"enabled": False, "profile": None}
-        fluorescence_gate_error = None
         try:
             buffer_info = self.prepare_external_buffer(
                 pipeline_mode=pipeline_mode,
@@ -6949,6 +7384,7 @@ class SAXSAbsWorkbenchApp:
                 )
                 x_label = prof["x_label"]
                 x_conversion = prof["x_conversion"]
+                self.validate_output_format_for_axis(output_format, x_label)
                 if active_calibration_context is not None:
                     self.require_external_profile_operator_provenance(
                         prof, active_calibration_context, Path(fp).name
@@ -7261,6 +7697,9 @@ class SAXSAbsWorkbenchApp:
                         self.t3_output_format.get()
                         if hasattr(self, "t3_output_format")
                         else "tsv"
+                    )
+                    output_format = self.validate_output_format_for_axis(
+                        output_format, x_label
                     )
                     out_path = self.resolve_profile_output_path(
                         out_dir / f"{stem_map[fp]}{ext}",
@@ -7673,9 +8112,7 @@ Step 1. 先做 Tab1 标定（只需一组 Std/BG/Dark/poni）
 
 Step 2. 再做 Tab2 批处理
 1) 确认 K 因子 > 0；BG/Dark/poni 路径正确。
-2) 选择厚度策略：
-   - 自动厚度：d = -ln(T)/mu
-   - 固定厚度：所有样品同一厚度
+2) 输入正式输出所需的固定厚度；逐帧 Beer-Lambert 厚度仅保留为诊断概念，不参与正式输出。
 3) 选择积分模式（可多选）：
    - I-Q 全环
    - I-Q 扇区（支持多扇区：如 -25~25;45~65）
@@ -7693,13 +8130,8 @@ Step 2. 再做 Tab2 批处理
 8) 点击“开始稳健批处理”。
 
 Step 3. 如果你已在外部软件完成积分（可选）
-1) 进入 Tab3，导入外部 1D 文件（.dat/.txt/.chi/.csv）。
-2) 选择流程：
-   - 仅比例缩放：外部1D已完成本底/归一化
-   - 原始1D完整校正：外部1D是原始积分结果，需要提供 BG1D/Dark1D 和 exp/I0/T
-   - metadata 来源优先级：metadata.csv > 文件注释头 > Tab3 固定参数
-   - BG固定参数默认跟随 Tab1 全局；可取消“BG参数跟随”后手动覆盖
-   - metadata.csv 可以直接用 Tab2 的 batch_report.csv，或点“由 Tab2 报告生成 metadata”
+1) 进入 Tab3，导入外部 relative 1D 文件（.dat/.txt/.chi/.csv/.xml/.h5/.hdf5）。
+2) Tab3 当前正式流程仅做已完成归一化的 relative 曲线比例缩放；raw 1D 完整校正入口保持禁用。
 3) 选择公式：
    - K/d：外部 1D 还未除厚度
    - K：外部 1D 已除厚度
@@ -7717,11 +8149,11 @@ Step 3. 如果你已在外部软件完成积分（可选）
 
 3) Trans(T)
    透过率，推荐范围 (0, 1]。
-   程序会对 1~2 的值做保护处理（视为漂移并夹到 1.0），
-   仅对明确百分号或明显百分数字面量（>2）才按百分数换算。
+   带百分号或明显百分数字面量（2≤T≤100，例如 85）的值会按百分数换算；
+   没有百分号且位于 1<T<2 的歧义值会被拒绝，不会被猜测或夹到 1.0。
 
 4) mu（自动厚度模式）
-   单位 cm^-1。mu 错会导致厚度和绝对强度整体偏差。
+   单位 cm^-1。当前仅作逐帧 Beer-Lambert 诊断，不进入 Tab2 正式固定厚度输出。
 
 5) Polarization
    范围 [-1, 1]。不确定时先用 0。
@@ -7834,7 +8266,7 @@ A7：
 [八] 推荐工作习惯（减少返工）
 ----------------------------------------
 1) 先用 3~5 个样品试跑，确认流程正确再全量跑。
-2) 批处理时优先开启断点续跑，避免中断后重算全部。
+2) 正式输出不使用仅按文件存在性跳过的旧版断点续跑；中断后请重新预检查。
 3) 每批次保留 run_meta 与 batch_report，方便追溯与审稿说明。
 
 （帮助页版本：v2，适配 Tab2->Tab3 直连 metadata 流程）
@@ -7858,12 +8290,13 @@ SAXSAbs Workbench User Guide
 1) Run Tab1 calibration with Std/BG/Dark/poni.
 2) Verify Time/I0/T and monitor mode (rate or integrated).
 3) Run robust K calibration and check Points Used, Std Dev, and Q overlap.
-4) Go to Tab2 for batch processing; run dry-check before full run.
-5) Use Tab3 only when external 1D conversion is needed.
+4) Go to Tab2, enter fixed thickness, and run dry-check before full output.
+5) Use Tab3 only to scale an already reduced relative 1D profile.
 
 [3] Critical checks before batch runs
 - K factor is valid and recent.
 - BG/Dark/poni are from compatible conditions.
+- Transmission T must satisfy 0 < T <= 1.
 - Dry-check reports no critical warnings.
 - Monitor mode matches beamline data semantics.
 
@@ -7890,7 +8323,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         btn_copy = ttk.Button(bar, text=self.tr("help_copy_btn"), command=copy_help)
         self._register_i18n_widget(btn_copy, "help_copy_btn")
         btn_copy.pack(side="right")
-        self.add_tooltip(btn_copy, self.tr("help_copy_tooltip"))
+        self.add_tooltip(btn_copy, "help_copy_tooltip")
 
     def refresh_help_text(self):
         txt = getattr(self, "help_text_widget", None)
@@ -7912,12 +8345,13 @@ SAXSAbs Workbench User Guide
 1) Run Tab1 calibration with Std/BG/Dark/poni.
 2) Verify Time/I0/T and monitor mode (rate or integrated).
 3) Run robust K calibration and check Points Used, Std Dev, and Q overlap.
-4) Go to Tab2 for batch processing; run dry-check before full run.
-5) Use Tab3 only when external 1D conversion is needed.
+4) Go to Tab2, enter fixed thickness, and run dry-check before full output.
+5) Use Tab3 only to scale an already reduced relative 1D profile.
 
 [3] Critical checks before batch runs
 - K factor is valid and recent.
 - BG/Dark/poni are from compatible conditions.
+- Transmission T must satisfy 0 < T <= 1.
 - Dry-check reports no critical warnings.
 - Monitor mode matches beamline data semantics.
 
@@ -9600,6 +10034,15 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 self.refresh_queue_status()
 
             selected_modes = self.get_selected_modes()
+            output_format = str(
+                getattr(self, "t2_output_format", None).get()
+                if getattr(self, "t2_output_format", None) is not None
+                else "tsv"
+            ).strip().lower()
+            self.validate_output_format_for_axis(
+                output_format,
+                "Chi_deg" if "radial_chi" in selected_modes else "Q_A^-1",
+            )
             export_cal2d = bool(self.t2_export_cal2d.get()) if hasattr(self, "t2_export_cal2d") else False
             if not selected_modes and not export_cal2d:
                 raise ValueError("未选择输出：请至少勾选一种积分模式，或启用校正后2D数据包导出。")
@@ -9826,7 +10269,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                     k_factor=float(self.global_vars["k_factor"].get()),
                     require_scaled_pipeline=False,
                 ),
-                "output_format": self.t2_output_format.get() if hasattr(self, "t2_output_format") else "tsv",
+                "output_format": output_format,
                 "export_cal2d": export_cal2d,
                 "cal2d_root": cal2d_root,
                 "cal2d_dtype": cal2d_dtype,
@@ -9975,7 +10418,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                         ),
                         "fixed_thk_cm": fixed_thk_cm if self.t2_calc_mode.get() == "fixed" else None,
                         "alpha": float(self.t2_alpha.get()) if self.t2_alpha_enabled.get() else 1.0,
-                        "output_format": self.t2_output_format.get() if hasattr(self, "t2_output_format") else "tsv",
+                        "output_format": output_format,
                         "export_calibrated_2d": export_cal2d,
                         "calibrated_2d_dtype": cal2d_dtype if export_cal2d else None,
                         "calibrated_2d_apply_flat": bool(self.t2_cal2d_apply_flat.get()) if export_cal2d else None,
@@ -10451,6 +10894,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         selected_modes = self.get_selected_modes()
         warnings = []
         calibration_gate_error = None
+        active_calibration_context = None
         formal_config_errors = []
         if str(mode).strip().lower() != "fixed":
             formal_config_errors.append(
@@ -10462,11 +10906,23 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             formal_config_errors.append(
                 "Legacy exists-only resume is disabled for formal Tab2 output."
             )
+        output_format = str(
+            getattr(self, "t2_output_format", None).get()
+            if getattr(self, "t2_output_format", None) is not None
+            else "tsv"
+        ).strip().lower()
+        try:
+            self.validate_output_format_for_axis(
+                output_format,
+                "Chi_deg" if "radial_chi" in selected_modes else "Q_A^-1",
+            )
+        except ValueError as exc:
+            formal_config_errors.append(str(exc))
         warnings.extend(formal_config_errors)
         try:
             k_factor = float(self.global_vars["k_factor"].get())
             polarization_applied, polarization_factor = self.resolve_t2_polarization()
-            self.require_calibration_context_for_batch(
+            active_calibration_context = self.require_calibration_context_for_batch(
                 k_factor=k_factor,
                 monitor_mode=monitor_mode,
                 poni_path=self.global_vars["poni_path"].get(),
@@ -10480,6 +10936,22 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
             calibration_gate_error = str(exc)
             warnings.append(calibration_gate_error)
+        try:
+            fluorescence_k = (
+                float(self.global_vars["k_factor"].get())
+                if "k_factor" in getattr(self, "global_vars", {})
+                else None
+            )
+            self.prepare_workbench_fluorescence(
+                source="t2",
+                pipeline_mode="scaled",
+                calibration_context=active_calibration_context,
+                k_factor=fluorescence_k,
+                require_scaled_pipeline=False,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            formal_config_errors.append(f"Fluorescence configuration invalid: {exc}")
+            warnings.append(f"Fluorescence configuration invalid: {exc}")
         worker_gate_error = None
         try:
             self.validate_batch_workers(self.t2_workers.get())
@@ -10511,18 +10983,30 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             monitor_mode,
         )
 
-        if not selected_modes:
+        export_cal2d = bool(
+            getattr(self, "t2_export_cal2d", None).get()
+            if getattr(self, "t2_export_cal2d", None) is not None
+            else False
+        )
+        if not selected_modes and not export_cal2d:
+            formal_config_errors.append(self.tr("warn_no_integ_mode"))
             warnings.append(self.tr("warn_no_integ_mode"))
         sector_specs = []
         if "1d_sector" in selected_modes:
             try:
                 sector_specs = self.get_t2_sector_specs()
                 if not self.t2_sector_save_each.get() and not self.t2_sector_save_combined.get():
-                    warnings.append(self.tr("warn_sector_no_output"))
+                    sector_output_error = self.tr("warn_sector_no_output")
+                    formal_config_errors.append(sector_output_error)
+                    warnings.append(sector_output_error)
             except Exception as e:
-                warnings.append(self.tr("warn_sector_angle_invalid").format(e=e))
+                sector_parse_error = self.tr("warn_sector_angle_invalid").format(e=e)
+                formal_config_errors.append(sector_parse_error)
+                warnings.append(sector_parse_error)
         if "radial_chi" in selected_modes and self.t2_rad_qmin.get() >= self.t2_rad_qmax.get():
-            warnings.append(self.tr("warn_texture_q_invalid"))
+            radial_q_error = self.tr("warn_texture_q_invalid")
+            formal_config_errors.append(radial_q_error)
+            warnings.append(radial_q_error)
         if self.t2_ref_mode.get() == "auto":
             if not self.t2_bg_candidates:
                 warnings.append(self.tr("warn_auto_bg_empty"))
@@ -10536,6 +11020,11 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             )
             if inst_issues:
                 warnings.append(self.tr("warn_inst_issues").format(n=len(inst_issues)))
+                # Strict instrument mismatches are deterministic run blockers;
+                # keep the summary in the warning panel and details below it.
+                formal_config_errors.append(
+                    self.tr("warn_inst_issues").format(n=len(inst_issues))
+                )
 
         bg_build_rejected = []
         dark_build_rejected = []
@@ -11477,11 +11966,15 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
 
         top.bind("<Destroy>", _remove_poni_trace, add="+")
 
-    def add_file_row(self, p, label_text, v, pat, cmd=None):
+    def add_file_row(self, p, label_text, v, pat, cmd=None, label_key=None):
+        key = label_key or (label_text if label_text in I18N.get("en", {}) else None)
+        display_text = self.tr(key) if key else label_text
         f = ttk.Frame(p)
         f.pack(fill="x", pady=3)
-        lbl = ttk.Label(f, text=label_text, width=18, anchor="e", justify="right", wraplength=150)
+        lbl = ttk.Label(f, text=display_text, width=18, anchor="e", justify="right", wraplength=150)
         lbl.pack(side="left", padx=(0, 6))
+        if key:
+            self._register_i18n_widget(lbl, key)
         ent = ttk.Entry(f, textvariable=v)
         ent.pack(side="left", fill="x", expand=True, padx=(0, 4))
         def b():
@@ -11492,13 +11985,18 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                     cmd(fp)
         btn = ttk.Button(f, text="...", width=3, command=b)
         btn.pack(side="left")
+        self.add_tooltip(btn, "tip_browse_file")
         return {"frame": f, "label": lbl, "entry": ent, "button": btn}
 
-    def add_dir_row(self, p, label_text, v):
+    def add_dir_row(self, p, label_text, v, label_key=None):
+        key = label_key or (label_text if label_text in I18N.get("en", {}) else None)
+        display_text = self.tr(key) if key else label_text
         f = ttk.Frame(p)
         f.pack(fill="x", pady=3)
-        lbl = ttk.Label(f, text=label_text, width=18, anchor="e", justify="right", wraplength=150)
+        lbl = ttk.Label(f, text=display_text, width=18, anchor="e", justify="right", wraplength=150)
         lbl.pack(side="left", padx=(0, 6))
+        if key:
+            self._register_i18n_widget(lbl, key)
         ent = ttk.Entry(f, textvariable=v)
         ent.pack(side="left", fill="x", expand=True, padx=(0, 4))
         def b():
@@ -11507,6 +12005,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 v.set(dp)
         btn = ttk.Button(f, text="...", width=3, command=b)
         btn.pack(side="left")
+        self.add_tooltip(btn, "tip_browse_dir")
         return {"frame": f, "label": lbl, "entry": ent, "button": btn}
 
     def add_grid_entry(self, p, v, r, c):

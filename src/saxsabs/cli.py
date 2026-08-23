@@ -10,8 +10,11 @@ import argparse
 import json
 import math
 from pathlib import Path
+import re
 import sys
+import unicodedata
 
+import numpy as np
 import pandas as pd
 
 from . import __version__
@@ -25,6 +28,10 @@ from .io.parsers import (
     profile_intensity,
     profile_uncertainty,
     read_external_1d_profile,
+    canonicalize_q_unit,
+    infer_q_unit_from_column,
+    q_column_unit_hint,
+    q_axis_kind,
 )
 
 
@@ -112,6 +119,62 @@ def _resolve_column(
     )
 
 
+def _has_explicit_q_unit_hint(raw_hint: object, x_col: object) -> bool:
+    """Recognize unit-like hints while allowing semantic names such as ``q_ref``."""
+
+    hint = str(raw_hint or "").strip().lower()
+    column = unicodedata.normalize("NFKC", str(x_col or "")).lower()
+    text = f"{hint} {column}"
+    if any(marker in text for marker in ("^", "/", "⁻", "−", "inverse")):
+        return True
+    if any(char in column for char in "()[]{}"):
+        return True
+    return any(
+        re.search(rf"(?<![a-z]){token}(?![a-z])", text)
+        for token in ("a", "angstrom", "nm", "mm", "cm", "m", "um", "pm")
+    )
+
+
+def _is_bare_q_length_header(x_col: object) -> bool:
+    """Reject ``Q (nm)``/``Q (angstrom)`` before they become reciprocal Q."""
+
+    text = unicodedata.normalize("NFKC", str(x_col or "")).strip().lower()
+    text = text.replace("å", "angstrom").replace("Å", "angstrom")
+    if not text.startswith("q"):
+        return False
+    suffix = re.sub(r"[^a-z0-9]+", "", text[1:])
+    return suffix in {"a", "angstrom", "nm", "mm", "cm", "m", "um", "pm"}
+
+
+def _unitless_column_prefix(name: object) -> str:
+    text = str(name or "").strip()
+    prefix = re.split(r"[\s(\[{_:]", text, maxsplit=1)[0]
+    return _clean_column_name(prefix)
+
+
+def _q_selector_matches_unitful_profile(requested: object, resolved: object) -> bool:
+    return (
+        q_axis_kind(resolved) == "q"
+        and _clean_column_name(requested) == _unitless_column_prefix(resolved)
+        and _clean_column_name(requested) != _clean_column_name(resolved)
+    )
+
+
+def _q_column_matches_profile_values(
+    dataframe: pd.DataFrame,
+    column: object,
+    profile: dict[str, object],
+) -> bool:
+    try:
+        source = pd.to_numeric(dataframe[column], errors="coerce").to_numpy(dtype=float)
+        parsed = np.asarray(profile["x"], dtype=float)
+    except (KeyError, TypeError, ValueError):
+        return False
+    source = np.sort(source[np.isfinite(source)])
+    parsed = np.sort(parsed[np.isfinite(parsed)])
+    return source.shape == parsed.shape and np.allclose(source, parsed, rtol=0.0, atol=1e-12)
+
+
 def _read_profile_for_estimate(
     path: Path,
     *,
@@ -122,18 +185,72 @@ def _read_profile_for_estimate(
     if q_col is None and i_col is None:
         return read_external_1d_profile(path)
 
+    parsed_profile = read_external_1d_profile(path)
+    requested_q_matches = q_col is None or (
+        _clean_column_name(q_col) == _clean_column_name(parsed_profile.get("x_col", ""))
+    )
+    requested_i_matches = i_col is None or (
+        _clean_column_name(i_col) == _clean_column_name(parsed_profile.get("i_col", ""))
+    )
+    if requested_q_matches and requested_i_matches:
+        reused = dict(parsed_profile)
+        reused["x_axis_override"] = q_col is not None
+        if q_col is not None and not reused.get("x_unit"):
+            resolved_name = str(reused.get("x_col", ""))
+            reused["x_unit"] = infer_q_unit_from_column(resolved_name)
+            raw_q_hint = q_column_unit_hint(resolved_name)
+            reused["x_unit_raw"] = (
+                raw_q_hint
+                if reused["x_unit"] is None
+                and _has_explicit_q_unit_hint(raw_q_hint, resolved_name)
+                else ""
+            )
+        return reused
+
     df = _read_tabular_dataframe(path)
     columns = list(df.columns)
+    if (
+        q_col is not None
+        and requested_i_matches
+        and _q_selector_matches_unitful_profile(
+            q_col, parsed_profile.get("x_col", "")
+        )
+    ):
+        try:
+            raw_q_col = _resolve_column(columns, q_col, "q", profile_label)
+        except ValueError as exc:
+            raise ValueError(
+                f"{profile_label} q selector {q_col!r} is ambiguous; "
+                "select the complete unit-bearing Q column"
+            ) from exc
+        if not _q_column_matches_profile_values(df, raw_q_col, parsed_profile):
+            raise ValueError(
+                f"{profile_label} q selector {q_col!r} does not match the parsed Q column; "
+                "refusing to discard its unit metadata"
+            )
+        reused = dict(parsed_profile)
+        reused["x_axis_override"] = True
+        return reused
+
     resolved_q_col = _resolve_column(columns, q_col, "q", profile_label)
     resolved_i_col = _resolve_column(columns, i_col, "intensity", profile_label)
 
     q = pd.to_numeric(df[resolved_q_col], errors="coerce").to_numpy(dtype=float)
     intensity = pd.to_numeric(df[resolved_i_col], errors="coerce").to_numpy(dtype=float)
-    profile = read_external_1d_profile(path)
+    profile = parsed_profile
     profile["x"] = q
     profile["intensity"] = intensity
     profile["i_col"] = str(resolved_i_col)
     profile["x_col"] = str(resolved_q_col)
+    profile["x_unit"] = infer_q_unit_from_column(resolved_q_col)
+    raw_q_hint = q_column_unit_hint(resolved_q_col)
+    profile["x_unit_raw"] = (
+        raw_q_hint
+        if profile["x_unit"] is None
+        and _has_explicit_q_unit_hint(raw_q_hint, resolved_q_col)
+        else ""
+    )
+    profile["x_axis_override"] = q_col is not None
     return profile
 
 
@@ -148,6 +265,78 @@ def _apply_declared_intensity_state(
     updated = dict(profile)
     updated["operator_provenance"] = provenance
     updated["intensity_state"] = declared_state
+    return updated
+
+
+def _normalize_q_profile(
+    profile: dict[str, object],
+    *,
+    profile_label: str = "profile",
+) -> dict[str, object]:
+    """Return a shallow profile copy whose Q values are in Å⁻¹.
+
+    Parsers preserve source values and report ``x_unit``.  The numerical
+    kernels used by these CLI commands have a single Å⁻¹ contract, so this is
+    the only conversion boundary.  Calling it repeatedly is harmless because
+    the returned profile is explicitly marked ``A^-1``.
+    """
+
+    x_col = str(profile.get("x_col", "")).strip()
+    axis_kind = q_axis_kind(x_col)
+    if axis_kind == "chi":
+        raise ValueError(f"{profile_label}: chi is an angle axis, not Q")
+    if axis_kind == "two_theta":
+        raise ValueError(f"{profile_label}: 2theta requires an explicit wavelength conversion")
+    if axis_kind == "unknown" and profile.get("x_axis_override"):
+        axis_kind = "q"
+    if axis_kind != "q":
+        raise ValueError(
+            f"{profile_label}: unsupported or non-Q axis {x_col!r}; expected a Q column"
+        )
+    if _is_bare_q_length_header(x_col):
+        raise ValueError(
+            f"{profile_label}: Q unit must explicitly state a reciprocal length "
+            "(for example nm^-1 or 1/angstrom)"
+        )
+
+    raw_unit = profile.get("x_unit")
+    declared_unit = canonicalize_q_unit(raw_unit) if raw_unit not in (None, "") else None
+    if raw_unit not in (None, "") and declared_unit is None:
+        raise ValueError(f"{profile_label}: unsupported Q unit {raw_unit!r}")
+    raw_unit_hint = str(profile.get("x_unit_raw", "") or "").strip()
+    if raw_unit_hint and declared_unit is None:
+        raise ValueError(f"{profile_label}: unsupported Q unit {raw_unit_hint!r}")
+    inferred_unit = infer_q_unit_from_column(x_col)
+    if declared_unit is not None and inferred_unit is not None and declared_unit != inferred_unit:
+        raise ValueError(
+            f"{profile_label}: Q unit metadata conflicts with column {x_col!r}"
+        )
+    source_unit = declared_unit or inferred_unit
+    if source_unit is None:
+        # A bare q column is the historical CLI contract and is interpreted
+        # as Å⁻¹; no conversion is applied.
+        source_unit = "A^-1"
+
+    try:
+        x = np.asarray(profile["x"], dtype=np.float64)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"{profile_label}: Q values must be numeric") from exc
+    if x.ndim != 1 or not np.all(np.isfinite(x)):
+        raise ValueError(f"{profile_label}: Q values must be a finite 1-D array")
+
+    conversion = "none"
+    if source_unit == "nm^-1":
+        x = x / 10.0
+        conversion = "nm^-1_to_A^-1"
+
+    updated = dict(profile)
+    updated["x"] = x.copy()
+    updated["x_unit"] = "A^-1"
+    updated["x_col"] = "Q_A^-1"
+    provenance = dict(profile.get("operator_provenance") or {})
+    provenance["q_unit_original"] = str(profile.get("x_unit") or source_unit)
+    provenance["q_unit_conversion"] = conversion
+    updated["operator_provenance"] = provenance
     return updated
 
 
@@ -457,6 +646,7 @@ def main() -> None:
                 {
                     "points": int(result["x"].size),
                     "x_col": result["x_col"],
+                    "x_unit": result.get("x_unit"),
                     "i_col": result["i_col"],
                     "err_col": result["err_col"],
                     "intensity_state": result.get("intensity_state"),
@@ -477,6 +667,7 @@ def main() -> None:
                 ),
                 args.intensity_state,
             )
+            measured = _normalize_q_profile(measured, profile_label="measured")
             assessment = require_relative_input_for_absolute_scaling(
                 measured, profile_name=str(args.meas)
             )
@@ -506,6 +697,7 @@ def main() -> None:
                     i_col=args.ref_i_col,
                     profile_label="reference",
                 )
+                reference = _normalize_q_profile(reference, profile_label="reference")
                 out = estimate_k_factor_robust(
                     q_meas=measured["x"],
                     i_meas_per_cm=i_meas,
@@ -539,8 +731,12 @@ def main() -> None:
 
     if args.command == "subtract-buffer":
         try:
-            sample = read_external_1d_profile(args.sample)
-            buffer_profile = read_external_1d_profile(args.buffer)
+            sample = _normalize_q_profile(
+                read_external_1d_profile(args.sample), profile_label="sample"
+            )
+            buffer_profile = _normalize_q_profile(
+                read_external_1d_profile(args.buffer), profile_label="buffer"
+            )
             result = subtract_buffer(
                 sample["x"],
                 profile_intensity(sample),
@@ -571,7 +767,9 @@ def main() -> None:
 
     if args.command == "subtract-fluorescence":
         try:
-            sample = read_external_1d_profile(args.sample)
+            sample = _normalize_q_profile(
+                read_external_1d_profile(args.sample), profile_label="sample"
+            )
             high_q_window = None
             if args.qmin is not None or args.qmax is not None:
                 if args.qmin is None or args.qmax is None:
@@ -580,7 +778,10 @@ def main() -> None:
             q_fluo = i_fluo = err_fluo = None
             fluo_profile = None
             if args.fluorescence is not None:
-                fluo_profile = read_external_1d_profile(args.fluorescence)
+                fluo_profile = _normalize_q_profile(
+                    read_external_1d_profile(args.fluorescence),
+                    profile_label="fluorescence",
+                )
                 q_fluo = fluo_profile["x"]
                 i_fluo = profile_intensity(fluo_profile)
                 err_fluo = profile_uncertainty(fluo_profile)
