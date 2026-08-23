@@ -55,7 +55,7 @@ MAX_OUTPUT_STEM_LENGTH = 120
 DEFAULT_LEGACY_RESUME_ENABLED = False
 WORKBENCH_MIN_SIZE = (900, 600)
 OUTPUT_FORMAT_TOKENS = ("tsv", "csv", "cansas_xml", "nxcansas_h5")
-EXTERNAL_1D_FILE_PATTERN = "*.dat *.txt *.chi *.csv *.xml *.h5 *.hdf5"
+EXTERNAL_1D_FILE_PATTERN = "*.dat *.txt *.chi *.csv *.xml *.h5 *.hdf5 *.hdf *.nxs"
 
 logger = logging.getLogger(__name__)
 SUPPORTED_LANGUAGES = ("en", "zh")
@@ -294,7 +294,7 @@ I18N = {
         "lf_t3_execution": "2. Execution Strategy",
         "cb_t3_resume": "Resume (skip existing output)",
         "cb_t3_overwrite": "Force overwrite",
-        "lbl_t3_formats": "Supported: .dat .txt .chi .csv .xml .h5 .hdf5 (need X & I columns; Error optional)",
+        "lbl_t3_formats": "Supported: .dat .txt .chi .csv .xml .h5 .hdf5 .hdf .nxs (need X & I columns; Error optional)",
         "lf_t3_raw_params": "3. Raw 1D Correction Params (raw pipeline)",
         "btn_t3_meta_from_batch": "Generate metadata from Tab2 report",
         "cb_t3_meta_thk": "Prefer thk_mm from metadata",
@@ -716,7 +716,7 @@ I18N = {
         "lf_t3_execution": "2. 执行策略",
         "cb_t3_resume": "断点续跑(跳过已存在输出)",
         "cb_t3_overwrite": "强制覆盖输出",
-        "lbl_t3_formats": "支持格式: .dat .txt .chi .csv .xml .h5 .hdf5（列至少包含 X 与 I；Error 可选）",
+        "lbl_t3_formats": "支持格式: .dat .txt .chi .csv .xml .h5 .hdf5 .hdf .nxs（列至少包含 X 与 I；Error 可选）",
         "lf_t3_raw_params": "3. 原始1D校正参数（raw流程）",
         "btn_t3_meta_from_batch": "由 Tab2 报告生成 metadata",
         "cb_t3_meta_thk": "优先使用 metadata 中的 thk_mm",
@@ -3582,7 +3582,7 @@ class SAXSAbsWorkbenchApp:
             else:
                 w = np.asarray(w, dtype=np.float64)
                 if w.shape != r0.shape:
-                    w = np.zeros_like(i, dtype=np.float64)
+                    w = np.ones_like(i, dtype=np.float64)
             valid = np.isfinite(i) & np.isfinite(w) & (w > 0.0)
             w_eff = np.where(valid, w, 0.0)
 
@@ -3642,9 +3642,15 @@ class SAXSAbsWorkbenchApp:
         return res, s1, s2, wrap
 
     def check_instrument_consistency(self, file_paths, poni_path=None, tol_pct=0.5):
+        try:
+            tolerance_pct = float(tol_pct)
+        except (TypeError, ValueError):
+            return ["仪器一致性阈值必须是有限正数（单位：%）"]
+        if not np.isfinite(tolerance_pct) or tolerance_pct <= 0:
+            return ["仪器一致性阈值必须是有限正数（单位：%）"]
         if not file_paths:
             return []
-        tol = max(float(tol_pct), 0.01) / 100.0
+        tol = max(tolerance_pct, 0.01) / 100.0
         sigs = []
         for fp in file_paths:
             try:
@@ -3827,6 +3833,19 @@ class SAXSAbsWorkbenchApp:
         fmt = str(output_format or "tsv").strip().lower()
         if fmt not in OUTPUT_FORMAT_TOKENS:
             raise ValueError(f"Unsupported output format: {output_format}")
+        if fmt == "nxcansas_h5":
+            if write_nxcansas_h5 is None:
+                raise ValueError(
+                    "NXcanSAS HDF5 output is unavailable; install it with: "
+                    "pip install saxsabs[hdf5]"
+                )
+            try:
+                import h5py  # noqa: F401
+            except ImportError as exc:
+                raise ValueError(
+                    "NXcanSAS HDF5 output requires h5py; install it with: "
+                    "pip install saxsabs[hdf5]"
+                ) from exc
         if fmt in {"cansas_xml", "nxcansas_h5"} and str(x_label) != "Q_A^-1":
             raise ValueError(
                 f"输出格式 {fmt} 要求 Q_A^-1 轴数据，当前为 {x_label}；"
@@ -6653,28 +6672,52 @@ class SAXSAbsWorkbenchApp:
                 return None
 
             text = unicodedata.normalize("NFKC", str(value or "").strip().lower())
+            text = text.replace("å", "angstrom").replace("Å", "angstrom")
+            text = re.sub(r"(?<=[a-z])(?:−|–|—)1", "^-1", text)
             text = (
-                text.replace("å", "angstrom")
-                .replace("Å", "angstrom")
+                text
+                .replace("⁰", "0")
+                .replace("¹", "1")
+                .replace("²", "2")
+                .replace("³", "3")
+                .replace("⁴", "4")
+                .replace("⁵", "5")
+                .replace("⁶", "6")
+                .replace("⁷", "7")
+                .replace("⁸", "8")
+                .replace("⁹", "9")
                 .replace("⁻", "-")
                 .replace("−", "-")
                 .replace("–", "-")
+                .replace("—", "-")
             )
-            text = re.sub(r"^\s*q(?:\s*[_:\-]?\s*)?", "", text, count=1)
-            has_inverse = bool(
-                re.search(r"(?<!\d)1\s*/", text)
-                or re.search(r"\^?\s*-\s*1", text)
-                or re.search(r"(?<![a-z])(?:inverse|inv)(?![a-z])", text)
-                or re.search(r"(?<![a-z])(?:inverse|inv)(?:angstrom|nm|a)(?![a-z])", text)
-            )
-            if not has_inverse:
+            matching = {"(": ")", "[": "]", "{": "}"}
+            stack = []
+            for char in text:
+                if char in matching:
+                    stack.append(matching[char])
+                elif char in matching.values():
+                    if not stack or stack.pop() != char:
+                        return None
+            if stack:
                 return None
-            base = re.sub(r"^(?:inverse|inv)", "", text)
-            if "angstrom" in base or re.search(r"(?<![a-z])a(?![a-z])", base):
-                return "a^-1"
-            if re.search(r"(?<![a-z])nm(?![a-z])", base):
-                return "nm^-1"
-            return None
+            if text.startswith("q") and (len(text) == 1 or not text[1].isalnum()):
+                prefix = re.match(r"^q\s*(?:[_:\-]\s*)?", text)
+                text = text[prefix.end() :] if prefix is not None else text[1:]
+            if text and text[:1] in "([{":
+                closer = matching[text[0]]
+                if not text.endswith(closer):
+                    return None
+                text = text[1:-1].strip()
+            unit = r"(?:a|angstrom|nm)"
+            matched = re.fullmatch(rf"1\s*/\s*({unit})", text)
+            if matched is None:
+                matched = re.fullmatch(rf"({unit})\s*(?:\^\s*)?-\s*1", text)
+            if matched is None:
+                matched = re.fullmatch(rf"(?:inverse|inv)\s*({unit})", text)
+            if matched is None:
+                return None
+            return "nm^-1" if matched.group(1) == "nm" else "a^-1"
 
         raw_name = str(profile.get("x_col", "")).strip()
         normalized_name = unicodedata.normalize("NFKC", raw_name).lower()
@@ -6718,8 +6761,10 @@ class SAXSAbsWorkbenchApp:
             and raw_unit_hint is not None
             and str(raw_unit_hint).strip()
         ):
-            unit_source = raw_unit_hint if str(raw_unit_hint or "").strip() else raw_name
-            q_unit = canonical_q_unit(unit_source)
+            # A parser hint is diagnostic only.  Revalidate the complete
+            # source header so malformed delimiters cannot be trimmed into a
+            # valid unit by the legacy workbench path.
+            q_unit = canonical_q_unit(raw_name)
             if q_unit is None:
                 raise ValueError(
                     f"Q轴单位未知或歧义: {raw_name!r}；"
@@ -8130,7 +8175,7 @@ Step 2. 再做 Tab2 批处理
 8) 点击“开始稳健批处理”。
 
 Step 3. 如果你已在外部软件完成积分（可选）
-1) 进入 Tab3，导入外部 relative 1D 文件（.dat/.txt/.chi/.csv/.xml/.h5/.hdf5）。
+1) 进入 Tab3，导入外部 relative 1D 文件（.dat/.txt/.chi/.csv/.xml/.h5/.hdf5/.hdf/.nxs）。
 2) Tab3 当前正式流程仅做已完成归一化的 relative 曲线比例缩放；raw 1D 完整校正入口保持禁用。
 3) 选择公式：
    - K/d：外部 1D 还未除厚度

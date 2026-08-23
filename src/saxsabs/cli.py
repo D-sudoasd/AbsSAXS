@@ -24,6 +24,12 @@ from .core.calibration import estimate_k_factor_robust
 from .core.intensity_state import require_relative_input_for_absolute_scaling
 from .core.normalization import compute_norm_factor
 from .io.parsers import (
+    _attach_intensity_arrays,
+    _normalise_inferred_header_columns,
+    _physical_data_width,
+    _read_plain_header_tokens,
+    _read_comment_header_dataframe,
+    _unit_delimiters_are_balanced,
     parse_header_values,
     profile_intensity,
     profile_uncertainty,
@@ -68,7 +74,13 @@ def _available_columns_message(columns: list[object]) -> str:
 
 
 def _read_tabular_dataframe(path: Path) -> pd.DataFrame:
+    comment_header_df = _read_comment_header_dataframe(path)
+    if comment_header_df is not None:
+        return comment_header_df
+
     errors: list[str] = []
+    header_tokens = _read_plain_header_tokens(path)
+    data_width = _physical_data_width(path)
     read_trials = [
         {"sep": None, "engine": "python", "comment": "#"},
         {"sep": r"[,\s;]+", "engine": "python", "comment": "#"},
@@ -80,6 +92,11 @@ def _read_tabular_dataframe(path: Path) -> pd.DataFrame:
             errors.append(str(exc))
             continue
         if df is not None and not df.empty and df.shape[1] >= 2:
+            df = _normalise_inferred_header_columns(
+                df,
+                header_tokens=header_tokens,
+                data_width=data_width,
+            )
             return df
 
     detail = f" ({'; '.join(errors[:2])})" if errors else ""
@@ -97,6 +114,15 @@ def _resolve_column(
             return requested
         requested_clean = _clean_column_name(requested)
         matches = [col for col in columns if _clean_column_name(col) == requested_clean]
+        if role == "intensity" and requested_clean == "i":
+            matches.extend(
+                col
+                for col in columns
+                if re.fullmatch(
+                    r"i\s*(?:[([{][^()\[\]{}]*[)\]}])?", str(col).strip(), re.IGNORECASE
+                )
+                and col not in matches
+            )
         if len(matches) == 1:
             return matches[0]
         raise ValueError(
@@ -153,11 +179,58 @@ def _unitless_column_prefix(name: object) -> str:
 
 
 def _q_selector_matches_unitful_profile(requested: object, resolved: object) -> bool:
-    return (
-        q_axis_kind(resolved) == "q"
-        and _clean_column_name(requested) == _unitless_column_prefix(resolved)
+    prefix_match = (
+        _clean_column_name(requested) == _unitless_column_prefix(resolved)
         and _clean_column_name(requested) != _clean_column_name(resolved)
     )
+    if not prefix_match:
+        return False
+    if q_axis_kind(resolved) == "q":
+        return True
+    unit, raw_hint = _explicit_q_unit_from_header(resolved)
+    return unit is not None or raw_hint is not None
+
+
+def _explicit_q_unit_from_header(name: object) -> tuple[str | None, str | None]:
+    """Extract a complete explicit reciprocal-unit suffix from any header."""
+
+    inferred = infer_q_unit_from_column(name)
+    if inferred is not None:
+        return inferred, None
+
+    text = unicodedata.normalize("NFKC", str(name or "").strip().lower())
+    matching = {"(": ")", "[": "]", "{": "}"}
+    delimiter_chars = set(matching) | set(matching.values())
+    if any(char in text for char in delimiter_chars):
+        bracketed = re.fullmatch(
+            r"([a-z][a-z0-9_]*)\s*([([{])(.*)([)\]}])",
+            text,
+        )
+        if bracketed is None:
+            return None, text
+        opener = bracketed.group(2)
+        if (
+            matching[opener] != bracketed.group(4)
+            or not _unit_delimiters_are_balanced(text)
+        ):
+            return None, text
+        candidate = bracketed.group(3).strip()
+        if not candidate or any(char in candidate for char in delimiter_chars):
+            return None, text
+        return canonicalize_q_unit(candidate), candidate
+
+    candidates: list[str] = []
+    for separator in ("_", ":", "-", " "):
+        marker = text.find(separator)
+        if marker > 0:
+            candidates.append(text[marker + 1 :].strip())
+    for candidate in candidates:
+        if not candidate:
+            continue
+        canonical = canonicalize_q_unit(candidate)
+        if canonical is not None or _has_explicit_q_unit_hint(candidate, text):
+            return canonical, candidate
+    return None, None
 
 
 def _q_column_matches_profile_values(
@@ -185,7 +258,10 @@ def _read_profile_for_estimate(
     if q_col is None and i_col is None:
         return read_external_1d_profile(path)
 
-    parsed_profile = read_external_1d_profile(path)
+    parsed_profile = read_external_1d_profile(
+        path,
+        allow_unidentified_intensity=i_col is not None,
+    )
     requested_q_matches = q_col is None or (
         _clean_column_name(q_col) == _clean_column_name(parsed_profile.get("x_col", ""))
     )
@@ -197,59 +273,114 @@ def _read_profile_for_estimate(
         reused["x_axis_override"] = q_col is not None
         if q_col is not None and not reused.get("x_unit"):
             resolved_name = str(reused.get("x_col", ""))
-            reused["x_unit"] = infer_q_unit_from_column(resolved_name)
+            selected_unit, selected_raw_hint = _explicit_q_unit_from_header(resolved_name)
+            reused["x_unit"] = selected_unit or infer_q_unit_from_column(resolved_name)
             raw_q_hint = q_column_unit_hint(resolved_name)
             reused["x_unit_raw"] = (
                 raw_q_hint
                 if reused["x_unit"] is None
+                and raw_q_hint
                 and _has_explicit_q_unit_hint(raw_q_hint, resolved_name)
-                else ""
+                else (selected_raw_hint or "") if reused["x_unit"] is None else ""
             )
         return reused
 
     df = _read_tabular_dataframe(path)
     columns = list(df.columns)
-    if (
-        q_col is not None
-        and requested_i_matches
-        and _q_selector_matches_unitful_profile(
-            q_col, parsed_profile.get("x_col", "")
-        )
+    preserve_parsed_q_metadata = False
+    if q_col is not None and _q_selector_matches_unitful_profile(
+        q_col, parsed_profile.get("x_col", "")
     ):
         try:
             raw_q_col = _resolve_column(columns, q_col, "q", profile_label)
-        except ValueError as exc:
-            raise ValueError(
-                f"{profile_label} q selector {q_col!r} is ambiguous; "
-                "select the complete unit-bearing Q column"
-            ) from exc
+        except ValueError:
+            # Whitespace-delimited headers are normalized to the complete
+            # parenthesized Q name.  A semantic ``Q`` selector may therefore
+            # resolve through the parser-selected unit-bearing column.
+            parsed_q_name = str(parsed_profile.get("x_col", ""))
+            raw_q_col = next(
+                (
+                    column
+                    for column in columns
+                    if _clean_column_name(column) == _clean_column_name(parsed_q_name)
+                ),
+                None,
+            )
+            if raw_q_col is None:
+                raise ValueError(
+                    f"{profile_label} q selector {q_col!r} is ambiguous; "
+                    "select the complete unit-bearing Q column"
+                ) from None
         if not _q_column_matches_profile_values(df, raw_q_col, parsed_profile):
             raise ValueError(
                 f"{profile_label} q selector {q_col!r} does not match the parsed Q column; "
                 "refusing to discard its unit metadata"
             )
-        reused = dict(parsed_profile)
-        reused["x_axis_override"] = True
-        return reused
-
-    resolved_q_col = _resolve_column(columns, q_col, "q", profile_label)
+        resolved_q_col = raw_q_col
+        preserve_parsed_q_metadata = True
+    else:
+        resolved_q_col = _resolve_column(columns, q_col, "q", profile_label)
     resolved_i_col = _resolve_column(columns, i_col, "intensity", profile_label)
 
     q = pd.to_numeric(df[resolved_q_col], errors="coerce").to_numpy(dtype=float)
     intensity = pd.to_numeric(df[resolved_i_col], errors="coerce").to_numpy(dtype=float)
-    profile = parsed_profile
+    mask = np.isfinite(q) & np.isfinite(intensity)
+    if int(mask.sum()) < 3:
+        raise ValueError(
+            f"{profile_label}: selected Q/intensity columns contain fewer than 3 finite rows"
+        )
+    order = np.argsort(q[mask])
+    q = q[mask][order]
+    intensity = intensity[mask][order]
+    profile = dict(parsed_profile)
     profile["x"] = q
     profile["intensity"] = intensity
     profile["i_col"] = str(resolved_i_col)
-    profile["x_col"] = str(resolved_q_col)
-    profile["x_unit"] = infer_q_unit_from_column(resolved_q_col)
-    raw_q_hint = q_column_unit_hint(resolved_q_col)
-    profile["x_unit_raw"] = (
-        raw_q_hint
-        if profile["x_unit"] is None
-        and _has_explicit_q_unit_hint(raw_q_hint, resolved_q_col)
-        else ""
+    if preserve_parsed_q_metadata:
+        profile["x_col"] = str(parsed_profile.get("x_col", resolved_q_col))
+        selected_unit, selected_raw_hint = _explicit_q_unit_from_header(resolved_q_col)
+        profile["x_unit"] = selected_unit
+        profile["x_unit_raw"] = "" if selected_unit is not None else (selected_raw_hint or "")
+    else:
+        profile["x_col"] = str(resolved_q_col)
+        selected_unit, selected_raw_hint = _explicit_q_unit_from_header(resolved_q_col)
+        profile["x_unit"] = selected_unit or infer_q_unit_from_column(resolved_q_col)
+        raw_q_hint = q_column_unit_hint(resolved_q_col)
+        profile["x_unit_raw"] = (
+            raw_q_hint
+            if profile["x_unit"] is None
+            and raw_q_hint
+            and _has_explicit_q_unit_hint(raw_q_hint, resolved_q_col)
+            else (selected_raw_hint or "") if profile["x_unit"] is None else ""
+        )
+    parsed_error_col = str(parsed_profile.get("err_col", "") or "").strip()
+    error_source_col = next(
+        (
+            column
+            for column in columns
+            if parsed_error_col
+            and _clean_column_name(column) == _clean_column_name(parsed_error_col)
+        ),
+        None,
     )
+    if error_source_col is None:
+        uncertainty = np.full(q.shape, np.nan, dtype=float)
+    else:
+        raw_uncertainty = pd.to_numeric(
+            df[error_source_col], errors="coerce"
+        ).to_numpy(dtype=float)
+        if raw_uncertainty.shape == mask.shape:
+            uncertainty = raw_uncertainty[mask][order]
+            uncertainty = np.where(np.isfinite(uncertainty), uncertainty, np.nan)
+        else:
+            uncertainty = np.full(q.shape, np.nan, dtype=float)
+    profile["uncertainty"] = uncertainty
+    profile.pop("i_abs", None)
+    profile.pop("i_rel", None)
+    profile.pop("err_abs", None)
+    profile.pop("err_rel", None)
+    profile.pop("intensity_state", None)
+    profile = _attach_intensity_arrays(profile, intensity, uncertainty)
     profile["x_axis_override"] = q_col is not None
     return profile
 
@@ -305,7 +436,12 @@ def _normalize_q_profile(
         raise ValueError(f"{profile_label}: unsupported Q unit {raw_unit!r}")
     raw_unit_hint = str(profile.get("x_unit_raw", "") or "").strip()
     if raw_unit_hint and declared_unit is None:
-        raise ValueError(f"{profile_label}: unsupported Q unit {raw_unit_hint!r}")
+        if _has_explicit_q_unit_hint(raw_unit_hint, x_col):
+            raise ValueError(f"{profile_label}: unsupported Q unit {raw_unit_hint!r}")
+        # Semantic suffixes such as ``q_ref`` are historical aliases for a
+        # bare q column, not unit declarations.  Keep rejecting unit-like
+        # unknown hints while preserving that CLI compatibility policy.
+        raw_unit_hint = ""
     inferred_unit = infer_q_unit_from_column(x_col)
     if declared_unit is not None and inferred_unit is not None and declared_unit != inferred_unit:
         raise ValueError(
@@ -334,8 +470,13 @@ def _normalize_q_profile(
     updated["x_unit"] = "A^-1"
     updated["x_col"] = "Q_A^-1"
     provenance = dict(profile.get("operator_provenance") or {})
-    provenance["q_unit_original"] = str(profile.get("x_unit") or source_unit)
-    provenance["q_unit_conversion"] = conversion
+    normalized_input = x_col == "Q_A^-1" and source_unit == "A^-1"
+    if normalized_input:
+        provenance.setdefault("q_unit_original", str(profile.get("x_unit") or source_unit))
+        provenance.setdefault("q_unit_conversion", conversion)
+    else:
+        provenance["q_unit_original"] = str(profile.get("x_unit") or source_unit)
+        provenance["q_unit_conversion"] = conversion
     updated["operator_provenance"] = provenance
     return updated
 

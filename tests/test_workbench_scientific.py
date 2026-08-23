@@ -198,7 +198,18 @@ def test_tab3_q_nm_inverse_converts_to_q_angstrom_inverse():
     assert conversion == "q_nm^-1_to_q_a^-1"
 
 
-@pytest.mark.parametrize("x_col", ["Q_nm1", "Q_A1", "Q (nm)", "Q (mm^-1)"])
+@pytest.mark.parametrize(
+    "x_col",
+    [
+        "Q_nm1",
+        "Q_A1",
+        "Q (nm)",
+        "Q (mm^-1)",
+        "Q_nm^-1_",
+        "Q_nm^-1-",
+        "Q (nm^-1))",
+    ],
+)
 def test_tab3_rejects_sign_stripped_or_unsupported_q_unit_headers(x_col):
     module = _load_workbench_module()
     app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
@@ -206,6 +217,93 @@ def test_tab3_rejects_sign_stripped_or_unsupported_q_unit_headers(x_col):
 
     with pytest.raises(ValueError, match="单位|unit|歧义|reciprocal|倒数"):
         app.resolve_external_x_axis("profile.dat", profile, mode="auto", wavelength_a="")
+
+
+@pytest.mark.parametrize("header", ["Q_[(nm^-1)]", "Q_Q (nm^-1)"])
+def test_tab3_parser_to_workbench_rejects_lossy_q_unit_hints(
+    tmp_path: Path,
+    header: str,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile_path = tmp_path / "malformed_q_header.dat"
+    profile_path.write_text(
+        f"{header} I\n0.1 10\n0.2 9\n0.3 8\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported or malformed Q-unit header"):
+        app.read_external_1d_profile(profile_path)
+
+
+@pytest.mark.parametrize("comment_header", [False, True])
+def test_tab3_parser_to_workbench_converts_space_separated_q_unit_header(
+    tmp_path: Path,
+    comment_header: bool,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile_path = tmp_path / "space_q_unit.dat"
+    prefix = "# " if comment_header else ""
+    profile_path.write_text(
+        f"{prefix}Q 1/nm I\n0.10 10\n0.20 9\n0.30 8\n",
+        encoding="utf-8",
+    )
+
+    profile = app.read_external_1d_profile(profile_path)
+    q, label, conversion = app.resolve_external_x_axis(
+        profile_path,
+        profile,
+        mode="auto",
+        wavelength_a="",
+    )
+
+    np.testing.assert_allclose(q, [0.01, 0.02, 0.03])
+    assert label == "Q_A^-1"
+    assert conversion == "q_nm^-1_to_q_a^-1"
+
+
+@pytest.mark.parametrize("comment_header", [False, True])
+def test_tab3_parser_to_workbench_converts_quoted_q_unit_header(
+    tmp_path: Path,
+    comment_header: bool,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile_path = tmp_path / "quoted_q_unit.csv"
+    prefix = "# " if comment_header else ""
+    profile_path.write_text(
+        f'{prefix}"Q 1/nm",I\n1.0,100\n2.0,90\n3.0,80\n',
+        encoding="utf-8",
+    )
+
+    profile = app.read_external_1d_profile(profile_path)
+    q, label, conversion = app.resolve_external_x_axis(
+        profile_path,
+        profile,
+        mode="auto",
+        wavelength_a="",
+    )
+
+    np.testing.assert_allclose(q, [0.1, 0.2, 0.3])
+    assert label == "Q_A^-1"
+    assert conversion == "q_nm^-1_to_q_a^-1"
+
+
+@pytest.mark.parametrize("header", ["Q (nm^-1) [A^-1] I", "Q nm^-10 I"])
+def test_tab3_parser_to_workbench_rejects_invalid_space_q_unit_header(
+    tmp_path: Path,
+    header: str,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile_path = tmp_path / "invalid_space_q_unit.dat"
+    profile_path.write_text(
+        f"{header}\n0.10 10\n0.20 9\n0.30 8\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Unsupported or malformed Q-unit header"):
+        app.read_external_1d_profile(profile_path)
 
 
 def test_tab3_preserves_explicit_x_unit_and_rejects_unsupported_raw_hint():
@@ -273,6 +371,40 @@ def test_tab3_profile_x_unit_contract_has_priority_and_supports_unicode_headers(
     assert conversion == "none"
 
 
+def test_tab3_legacy_q_unit_fallback_uses_strict_full_token_grammar(monkeypatch):
+    module = _load_workbench_module()
+    monkeypatch.setattr(module, "_core_canonicalize_q_unit", None)
+    monkeypatch.setattr(module, "_core_q_axis_kind", None)
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+
+    for raw_unit in (
+        "Q_A^-1",
+        "q_nm^-1",
+        "Q (nm^-1)",
+        "Q {Å⁻¹}",
+        "nm-1",
+        "A-1",
+        "angstrom-1",
+    ):
+        q, label, _conversion = app.resolve_external_x_axis(
+            "profile.dat",
+            {"x": np.array([1.0]), "x_col": "Q", "x_unit": raw_unit},
+            mode="auto",
+            wavelength_a="",
+        )
+        assert label == "Q_A^-1"
+        assert np.isfinite(q).all()
+
+    for raw_unit in ("nm^-10", "Q_nonsense_nm^-1", "1/nm A^-1"):
+        with pytest.raises(ValueError):
+            app.resolve_external_x_axis(
+                "profile.dat",
+                {"x": np.array([1.0]), "x_col": "Q", "x_unit": raw_unit},
+                mode="auto",
+                wavelength_a="",
+            )
+
+
 def test_workbench_merge_ignores_nan_intensity_and_keeps_unknown_sigma():
     module = _load_workbench_module()
     app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
@@ -300,6 +432,34 @@ def test_workbench_merge_ignores_nan_intensity_and_keeps_unknown_sigma():
     assert np.isnan(merged.sigma[0])
     assert merged.sigma[1] == pytest.approx(4.0)
     assert np.isnan(merged.sigma[2])
+
+
+@pytest.mark.parametrize(
+    "count",
+    [2.0, np.array([2.0, 2.0])],
+)
+def test_workbench_merge_uses_unit_weights_for_wrong_shaped_count(count):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    result = app.merge_integrate1d_results(
+        [
+            SimpleNamespace(
+                radial=np.array([0.01, 0.02, 0.03]),
+                intensity=np.array([10.0, 20.0, 30.0]),
+                count=count,
+                sigma=None,
+            ),
+            SimpleNamespace(
+                radial=np.array([0.01, 0.02, 0.03]),
+                intensity=np.array([20.0, 40.0, 60.0]),
+                count=np.ones(3),
+                sigma=None,
+            ),
+        ]
+    )
+
+    np.testing.assert_allclose(result.count, [2.0, 2.0, 2.0])
+    np.testing.assert_allclose(result.intensity, [15.0, 30.0, 45.0])
 
 
 def test_instrument_signature_exposes_only_observed_fields_and_strict_mismatch(
@@ -422,6 +582,27 @@ def test_instrument_consistency_checks_reliable_poni_distance_and_pixels(monkeyp
     )
     assert any("poni 样探距" in issue for issue in issues)
     assert any("poni pixel1" in issue for issue in issues)
+
+
+@pytest.mark.parametrize("tol_pct", [0.0, -0.1, np.nan, np.inf, -np.inf])
+def test_instrument_consistency_rejects_nonfinite_or_nonpositive_tolerance(
+    monkeypatch, tol_pct
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.session_geometry_fallback = {}
+    monkeypatch.setattr(
+        module,
+        "_workbench_load_detector_image",
+        lambda *_args, **_kwargs: pytest.fail(
+            "invalid tolerance must fail before loading files"
+        ),
+    )
+
+    issues = app.check_instrument_consistency(["sample.tif"], tol_pct=tol_pct)
+
+    assert issues
+    assert "有限正数" in issues[0]
 
 
 def test_instrument_signature_rejects_explicit_wavelength_energy_pair_mismatch(
@@ -1183,8 +1364,11 @@ def test_workbench_ui_contract_keeps_labels_tooltips_and_stable_format_tokens():
         "*.xml",
         "*.h5",
         "*.hdf5",
+        "*.hdf",
+        "*.nxs",
     }
-    assert ".h5 .hdf5" in module.I18N["en"]["lbl_t3_formats"]
+    assert ".h5 .hdf5 .hdf .nxs" in module.I18N["en"]["lbl_t3_formats"]
+    assert ".h5 .hdf5 .hdf .nxs" in module.I18N["zh"]["lbl_t3_formats"]
     assert "canSAS XML" in module.I18N["en"]["tip_output_format"]
     assert "Q (Å⁻¹)" in module.I18N["en"]["tip_output_format"]
     assert "does not change output routing" in module.I18N["en"]["tip_t2_group"]
@@ -1217,6 +1401,15 @@ def test_structured_output_formats_fail_closed_for_chi_and_accept_q(output_forma
         app.validate_output_format_for_axis(output_format, "Chi_deg")
     assert app.validate_output_format_for_axis(output_format, "Q_A^-1") == output_format
     assert app.validate_output_format_for_axis("tsv", "Chi_deg") == "tsv"
+
+
+def test_nxcansas_validation_reports_missing_h5py(monkeypatch):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    monkeypatch.setitem(sys.modules, "h5py", None)
+
+    with pytest.raises(ValueError, match=r"h5py.*pip install saxsabs\[hdf5\]"):
+        app.validate_output_format_for_axis("nxcansas_h5", "Q_A^-1")
 
 
 def test_fixed_tab2_preflight_excludes_diagnostic_mu_payload():
