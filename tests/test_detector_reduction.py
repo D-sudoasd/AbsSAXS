@@ -27,6 +27,36 @@ def test_normalize_detector_frame_scales_integrated_dark_by_exposure():
     np.testing.assert_allclose(result.image, [[10.0]])
 
 
+def test_normalize_detector_frame_rejects_nonfinite_dark_scale():
+    with pytest.raises(ValueError, match="dark scale"):
+        normalize_detector_frame(
+            np.array([[1.0]]),
+            np.array([[0.0]]),
+            image_exposure_s=1.0e308,
+            dark_exposure_s=1.0e-308,
+            monitor=1.0,
+            transmission=1.0,
+            monitor_mode="integrated",
+        )
+
+
+def test_build_nist_net_image_rejects_nonfinite_final_image():
+    with pytest.raises(ValueError, match="net detector image"):
+        build_nist_net_image(
+            np.array([[0.0]]),
+            np.array([[1.0e308]]),
+            np.array([[0.0]]),
+            sample_exposure_s=1.0,
+            background_exposure_s=1.0,
+            dark_exposure_s=1.0,
+            sample_monitor=1.0,
+            background_monitor=1.0,
+            sample_transmission=1.0,
+            monitor_mode="integrated",
+            alpha=1.0e308,
+        )
+
+
 def test_build_nist_net_image_does_not_divide_blank_by_blank_transmission():
     sample = np.array([[70.0]])
     blank = np.array([[30.0]])

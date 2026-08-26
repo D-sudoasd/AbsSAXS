@@ -1629,6 +1629,46 @@ def validate_instrument_consistency(
     return tuple(warnings)
 
 
+def validate_output_collisions(
+    sample_paths: list[Path],
+    *,
+    input_root: str | Path,
+    output_root: str | Path,
+) -> None:
+    """Reject distinct inputs which would overwrite one generated output set.
+
+    TIFF and TIFF-with-extra-suffix are both accepted by the BL19B2 scanner, but
+    ``Path.stem`` maps ``frame.tif`` and ``frame.tiff`` to the same generated
+    names.  This check is intentionally performed before any output directory or
+    provenance artifact is created.
+    """
+    collisions: dict[Path, list[Path]] = {}
+    for source in sample_paths:
+        paths = build_output_paths(
+            source,
+            input_root=input_root,
+            output_root=output_root,
+        )
+        for target in (paths.h5, paths.edf, paths.metadata, paths.preview):
+            collisions.setdefault(target.resolve(), []).append(Path(source))
+    duplicate_targets = {
+        target: sources
+        for target, sources in collisions.items()
+        if len({source.resolve() for source in sources}) > 1
+    }
+    if not duplicate_targets:
+        return
+    details = []
+    for target, sources in sorted(duplicate_targets.items(), key=lambda item: str(item[0])):
+        names = ", ".join(str(source) for source in sources)
+        details.append(f"{target}: {names}")
+    raise ValueError(
+        "generated output collision: different input names map to the same output "
+        "stem; rename one input or choose a different input layout before writing. "
+        + " | ".join(details)
+    )
+
+
 def natural_key(path: str | Path) -> list[Any]:
     text = str(path)
     parts = re.split(r"(\d+)", text)
@@ -2893,6 +2933,11 @@ def write_provenance_package(
 ) -> ProvenancePaths:
     out_root = config.resolved_output_root()
     paths = _provenance_paths(out_root)
+    package_root = out_root.resolve()
+
+    def generated(path: Path) -> str:
+        return path.resolve().relative_to(package_root).as_posix()
+
     paths.run_command.parent.mkdir(parents=True, exist_ok=True)
     if control_inputs is None:
         control_inputs = _load_run_control_inputs(config)
@@ -2915,7 +2960,7 @@ def write_provenance_package(
         "output_root": str(out_root),
         "source_poni_path": _optional_path_text(config.poni_path),
         "pydidas_cali_yaml": _optional_path_text(config.pydidas_cali_yaml),
-        "safe_poni_path": str(safe_poni_path),
+        "safe_poni_path": generated(safe_poni_path),
         "references": {
             "dark": str(reference_paths.dark),
             "background": str(reference_paths.background),
@@ -2924,8 +2969,8 @@ def write_provenance_package(
             "user_mask": str(reference_paths.mask or ""),
         },
         "mask": {
-            "npy": str(mask_info.npy_path),
-            "edf": str(mask_info.edf_path),
+            "npy": generated(mask_info.npy_path),
+            "edf": generated(mask_info.edf_path),
             "checksum_sha256": mask_info.checksum_sha256,
             "user_mask_pixels": mask_info.user_mask_pixels,
             "detector_mask_pixels": mask_info.detector_mask_pixels,
@@ -2954,10 +2999,10 @@ def write_provenance_package(
             "details": str(paths.code_state),
         },
         "files": {
-            "run_command": str(paths.run_command),
-            "processing_environment": str(paths.processing_environment),
-            "code_state": str(paths.code_state),
-            "provenance_summary": str(paths.provenance_summary),
+            "run_command": generated(paths.run_command),
+            "processing_environment": generated(paths.processing_environment),
+            "code_state": generated(paths.code_state),
+            "provenance_summary": generated(paths.provenance_summary),
         },
     }
     _write_json(paths.provenance_summary, summary)
@@ -3378,6 +3423,19 @@ def calibrate_standard(
             label="standard",
         )
     )
+    # Background pixels participate in the K calibration and must therefore be
+    # bound to the same detector geometry as the standard.  Checking only the
+    # standard lets a same-shaped but different-energy/beam-centre blank silently
+    # contaminate the calibration curve.
+    warnings.extend(
+        validate_instrument_consistency(
+            bg_header,
+            image_shape=background.shape,
+            integrator=ai,
+            label="background",
+            reference_header=std_header,
+        )
+    )
     kwargs: dict[str, Any] = {
         "unit": "q_A^-1",
         "correctSolidAngle": bool(config.correct_solid_angle_for_k),
@@ -3726,15 +3784,23 @@ def _pydidas_index_row(
     paths: OutputPaths,
     safe_poni_path: Path,
     mask_info: MaskInfo,
+    output_root: Path | None = None,
 ) -> dict[str, Any]:
+    package_root = Path(output_root).resolve() if output_root is not None else None
+
+    def generated(path: Path) -> str:
+        if package_root is None:
+            return str(path)
+        return path.resolve().relative_to(package_root).as_posix()
+
     return {
         "raw_sample": str(source),
-        "edf": str(paths.edf),
-        "hdf5": str(paths.h5),
-        "poni": str(safe_poni_path),
-        "mask": str(mask_info.npy_path),
-        "mask_edf": str(mask_info.edf_path),
-        "metadata": str(paths.metadata),
+        "edf": generated(paths.edf),
+        "hdf5": generated(paths.h5),
+        "poni": generated(safe_poni_path),
+        "mask": generated(mask_info.npy_path),
+        "mask_edf": generated(mask_info.edf_path),
+        "metadata": generated(paths.metadata),
         "normalization_factor": 1.0,
         "dark": "",
         "flat": "",
@@ -3746,6 +3812,7 @@ def _validate_resumed_array(
     *,
     metadata: dict[str, Any],
     label: str,
+    package_root: Path | None = None,
 ) -> None:
     arr = np.asarray(image)
     image_meta = metadata.get("output_image", {})
@@ -3761,7 +3828,12 @@ def _validate_resumed_array(
     finite = np.isfinite(arr)
     if np.all(finite):
         return
-    mask_path = Path(str(metadata.get("mask", {}).get("npy", "")))
+    raw_mask_path = Path(str(metadata.get("mask", {}).get("npy", "")))
+    mask_path = (
+        raw_mask_path
+        if raw_mask_path.is_absolute() or package_root is None
+        else package_root / raw_mask_path
+    )
     try:
         mask = np.load(mask_path, allow_pickle=False)
     except (OSError, ValueError) as exc:
@@ -3770,7 +3842,43 @@ def _validate_resumed_array(
         raise ValueError(f"existing {label} contains non-finite unmasked detector values")
 
 
+def _package_root_from_output_paths(paths: OutputPaths) -> Path:
+    """Infer package root without confusing an input folder named ``metadata``."""
+    metadata_path = paths.metadata.resolve()
+    h5_path = paths.h5.resolve()
+    edf_path = paths.edf.resolve()
+    for candidate in (paths.metadata.parent, *paths.metadata.parents):
+        if candidate.name.casefold() == "metadata":
+            root = candidate.parent.resolve()
+            try:
+                metadata_path.relative_to(root / "metadata")
+                h5_path.relative_to(root / "images_h5")
+                edf_path.relative_to(root / "images_edf")
+            except ValueError:
+                continue
+            return root
+    raise ValueError(f"cannot infer BL19B2 package root from metadata path: {paths.metadata}")
+
+
+def _resolve_generated_output_path(
+    value: str,
+    *,
+    package_root: Path,
+    expected: Path,
+    label: str,
+) -> Path:
+    """Resolve a generated output pointer while accepting old absolute packages."""
+    recorded = Path(value)
+    resolved = (
+        recorded if recorded.is_absolute() else package_root / recorded
+    ).resolve()
+    if resolved != expected.resolve():
+        raise ValueError(f"existing output path mismatch for {label}: {value!r}")
+    return resolved
+
+
 def _validate_existing_outputs(paths: OutputPaths, metadata: dict[str, Any]) -> None:
+    package_root = _package_root_from_output_paths(paths)
     outputs = metadata.get("outputs", {})
     external_k_contract = _k_calibration_contract(
         metadata.get("absolute_calibration", {}),
@@ -3782,8 +3890,14 @@ def _validate_existing_outputs(paths: OutputPaths, metadata: dict[str, Any]) -> 
         ("metadata", paths.metadata),
     ):
         recorded = str(outputs.get(key, ""))
-        if not recorded or Path(recorded).resolve() != expected_path.resolve():
+        if not recorded:
             raise ValueError(f"existing output path mismatch for {key}: {recorded!r}")
+        _resolve_generated_output_path(
+            recorded,
+            package_root=package_root,
+            expected=expected_path,
+            label=key,
+        )
     for label, path, key in (
         ("HDF5", paths.h5, "hdf5_sha256"),
         ("EDF", paths.edf, "edf_sha256"),
@@ -3884,7 +3998,12 @@ def _validate_existing_outputs(paths: OutputPaths, metadata: dict[str, Any]) -> 
                     )
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError(f"existing HDF5 output is unreadable or incomplete: {paths.h5}") from exc
-    _validate_resumed_array(h5_image, metadata=metadata, label="HDF5")
+    _validate_resumed_array(
+        h5_image,
+        metadata=metadata,
+        label="HDF5",
+        package_root=package_root,
+    )
 
     try:
         loaded_edf = load_detector_image(paths.edf, dtype=None)
@@ -3936,13 +4055,25 @@ def _validate_existing_outputs(paths: OutputPaths, metadata: dict[str, Any]) -> 
         )
         if header.get("ExpandedUStatus") != expected_expanded_status:
             raise ValueError("existing EDF expanded uncertainty status mismatch")
-        if Path(str(header.get("UncertaintyHDF5", ""))).resolve() != paths.h5.resolve():
+        uncertainty_pointer = Path(str(header.get("UncertaintyHDF5", "")))
+        if (
+            uncertainty_pointer.is_absolute()
+            and uncertainty_pointer.resolve() != paths.h5.resolve()
+        ) or (
+            not uncertainty_pointer.is_absolute()
+            and (package_root / uncertainty_pointer).resolve() != paths.h5.resolve()
+        ):
             raise ValueError("existing EDF uncertainty HDF5 pointer mismatch")
     except (OSError, KeyError, TypeError, ValueError) as exc:
         if isinstance(exc, ValueError) and "existing EDF" in str(exc):
             raise
         raise ValueError(f"existing EDF output is unreadable or incomplete: {paths.edf}") from exc
-    _validate_resumed_array(edf_image, metadata=metadata, label="EDF")
+    _validate_resumed_array(
+        edf_image,
+        metadata=metadata,
+        label="EDF",
+        package_root=package_root,
+    )
 
 
 def _validate_metadata_processing_signature(metadata: dict[str, Any]) -> None:
@@ -4029,6 +4160,7 @@ def _frame_qc_row_from_metadata(
     if metadata.get("frame_signature") != expected_frame_signature:
         raise ValueError(f"existing BL19B2 output frame signature mismatch for {rel}")
     _validate_existing_outputs(paths, metadata)
+    package_root = _package_root_from_output_paths(paths)
     outputs = metadata.get("outputs", {})
     qc = metadata.get("qc", {})
     normalization = metadata.get("normalization", {})
@@ -4037,15 +4169,24 @@ def _frame_qc_row_from_metadata(
     mask = metadata.get("mask", {})
     warnings = metadata.get("warnings", [])
     warning_text = " | ".join(str(item) for item in warnings) if isinstance(warnings, list) else str(warnings)
-    preview = str(outputs.get("preview") or paths.preview)
-    if not Path(preview).exists():
+    raw_preview = str(outputs.get("preview") or paths.preview)
+    preview_path = Path(raw_preview)
+    if not preview_path.is_absolute():
+        preview_path = package_root / preview_path
+    preview = str(preview_path)
+    if not preview_path.exists():
         preview = ""
+    def output_path(key: str, expected: Path) -> str:
+        raw = str(outputs.get(key) or expected)
+        path = Path(raw)
+        return str(path if path.is_absolute() else package_root / path)
+
     return {
         "relative_path": str(rel),
         "status": "success_existing",
-        "hdf5": str(outputs.get("hdf5") or paths.h5),
-        "edf": str(outputs.get("edf") or paths.edf),
-        "metadata": str(outputs.get("metadata") or paths.metadata),
+        "hdf5": output_path("hdf5", paths.h5),
+        "edf": output_path("edf", paths.edf),
+        "metadata": output_path("metadata", paths.metadata),
         "preview": preview,
         "processing_signature": metadata.get("processing_signature", ""),
         "mask": str(mask.get("npy", "")),
@@ -4094,6 +4235,11 @@ def _frame_metadata(
     if control_inputs is None:
         control_inputs = _load_run_control_inputs(config)
     control_provenance = _control_inputs_provenance_payload(control_inputs)
+    package_root = config.resolved_output_root().resolve()
+
+    def generated(path: Path) -> str:
+        return path.resolve().relative_to(package_root).as_posix()
+
     metadata = {
         'sample_selection': control_provenance['include_manifest'],
         "schema": SCHEMA_VERSION,
@@ -4104,10 +4250,10 @@ def _frame_metadata(
         "frame_signature": _frame_signature(processing_signature, source_identity),
         "raw_sample": str(source),
         "outputs": {
-            "hdf5": str(paths.h5),
-            "edf": str(paths.edf),
-            "metadata": str(paths.metadata),
-            "preview": str(paths.preview),
+            "hdf5": generated(paths.h5),
+            "edf": generated(paths.edf),
+            "metadata": generated(paths.metadata),
+            "preview": generated(paths.preview),
         },
         "intensity_unit": INTENSITY_UNIT,
         "output_image": {
@@ -4165,8 +4311,8 @@ def _frame_metadata(
             "transmission_policy": "QC only; normalized with T_bg=1 under NIST convention",
         },
         "mask": {
-            "npy": str(mask_info.npy_path),
-            "edf": str(mask_info.edf_path),
+            "npy": generated(mask_info.npy_path),
+            "edf": generated(mask_info.edf_path),
             "checksum_sha256": mask_info.checksum_sha256,
             "convention": "pyFAI: 0=valid, 1=masked",
             "sources": {
@@ -4182,7 +4328,7 @@ def _frame_metadata(
             },
         },
         "geometry": {
-            "poni": str(safe_poni_path),
+            "poni": generated(safe_poni_path),
             "source_poni_path": _optional_path_text(config.poni_path),
             "pydidas_cali_yaml": _optional_path_text(config.pydidas_cali_yaml),
             "energy_kev": header.energy_kev,
@@ -4210,14 +4356,14 @@ def _frame_metadata(
             "polarization": False,
         },
         "corrections_deferred_to_integration": {
-            "mask": str(mask_info.npy_path),
+            "mask": generated(mask_info.npy_path),
             "solid_angle": bool(config.correct_solid_angle_for_k),
             "polarization_factor": config.polarization_factor,
         },
         "recommended_reintegration": {
             "dark": None,
             "flat": None,
-            "mask": str(mask_info.npy_path),
+            "mask": generated(mask_info.npy_path),
             "normalization_factor": 1.0,
             "do_not_repeat": ["dark", "background", "transmission", "monitor", "thickness", "K"],
             "correctSolidAngle": bool(config.correct_solid_angle_for_k),
@@ -4308,6 +4454,13 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
     )
     inventory_rows, sample_paths = scan_inputs(
         config, include_manifest=control_inputs.include_manifest
+    )
+    # Validate the complete selected input set before creating any package
+    # directory or copying generated configuration artifacts.
+    validate_output_collisions(
+        sample_paths,
+        input_root=input_root,
+        output_root=out_root,
     )
 
     reference_sources: dict[str, DetectorSourceSnapshot] | None = None
@@ -4496,6 +4649,12 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
                 software_versions=software_versions,
                 code_state=code_state,
             )
+            for output_key in ("hdf5", "edf", "metadata", "preview"):
+                value = row.get(output_key)
+                if value:
+                    output_path = Path(str(value))
+                    if output_path.is_absolute():
+                        row[output_key] = output_path.resolve().relative_to(out_root.resolve()).as_posix()
             skipped += 1
             frame_qc_rows.append(row)
             manifest_row = {"raw_sample": str(source), **row}
@@ -4507,6 +4666,7 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
                     paths=paths,
                     safe_poni_path=safe_poni,
                     mask_info=mask_info,
+                    output_root=out_root,
                 )
             )
             if row.get("warnings"):
@@ -4674,10 +4834,12 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
             row = {
                 "relative_path": str(rel),
                 "status": "success",
-                "hdf5": str(paths.h5),
-                "edf": str(paths.edf),
-                "metadata": str(paths.metadata),
-                "preview": str(paths.preview) if preview_written else "",
+                "hdf5": paths.h5.relative_to(out_root).as_posix(),
+                "edf": paths.edf.relative_to(out_root).as_posix(),
+                "metadata": paths.metadata.relative_to(out_root).as_posix(),
+                "preview": paths.preview.relative_to(out_root).as_posix()
+                if preview_written
+                else "",
                 "processing_signature": processing_signature,
                 "mask": str(mask_info.npy_path),
                 "k_factor": calibration.k_factor,
@@ -4696,6 +4858,7 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
                     paths=paths,
                     safe_poni_path=safe_poni,
                     mask_info=mask_info,
+                    output_root=out_root,
                 )
             )
             if warnings:

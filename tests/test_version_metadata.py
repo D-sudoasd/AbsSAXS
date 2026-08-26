@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from datetime import date
 from pathlib import Path
 import re
+import sys
 
 from saxsabs import __version__
 
@@ -11,12 +13,11 @@ from saxsabs import __version__
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_release_version_metadata_is_consistent():
+def test_release_version_metadata_is_consistent(monkeypatch):
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     citation = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
     codemeta = json.loads((ROOT / "codemeta.json").read_text(encoding="utf-8"))
     zenodo = json.loads((ROOT / ".zenodo.json").read_text(encoding="utf-8"))
-    workbench = (ROOT / "SASAbs.py").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     paper = (ROOT / "paper" / "paper.md").read_text(encoding="utf-8")
 
@@ -28,7 +29,40 @@ def test_release_version_metadata_is_consistent():
     assert re.search(rf'^version: "{re.escape(__version__)}"$', citation, re.MULTILINE)
     assert codemeta["version"] == __version__
     assert zenodo["version"] == __version__
-    assert workbench.count(f'"{__version__}"') >= 2
+    spec = importlib.util.spec_from_file_location(
+        "saxsabs_workbench_version_metadata_test",
+        ROOT / "SASAbs.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    assert module.APP_VERSION == __version__
+
+    class MissingSourceVersionPath:
+        def __init__(self, *_parts):
+            pass
+
+        def resolve(self):
+            return self
+
+        @property
+        def parent(self):
+            return self
+
+        def __truediv__(self, _part):
+            return self
+
+        def read_text(self, **_kwargs):
+            raise OSError("source tree unavailable")
+
+    monkeypatch.setattr(module, "Path", MissingSourceVersionPath)
+    monkeypatch.setattr(
+        module.importlib_metadata,
+        "version",
+        lambda distribution: __version__ if distribution == "saxsabs" else "",
+    )
+    assert module._read_package_version() == __version__
     changelog_heading = re.search(
         rf"(?m)^## \[{re.escape(__version__)}\] - (?:Unreleased|\d{{4}}-\d{{2}}-\d{{2}})$",
         changelog,

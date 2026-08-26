@@ -20,6 +20,90 @@ def test_cli_norm_factor(capsys: pytest.CaptureFixture[str], monkeypatch: pytest
     assert out == "5.0"
 
 
+def test_cli_parse_header_accepts_bom_json_object(tmp_path: Path, capsys, monkeypatch):
+    path = tmp_path / "header.json"
+    path.write_text('{"exposure": "2 s", "monitor": 10, "transmission": 0.5}', encoding="utf-8-sig")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["saxsabs", "parse-header", "--header-json", str(path)],
+    )
+
+    main()
+
+    assert json.loads(capsys.readouterr().out)["i0"] == 10.0
+
+
+def test_cli_parse_header_rejects_non_mapping_without_traceback(
+    tmp_path: Path, capsys, monkeypatch
+):
+    path = tmp_path / "header.json"
+    path.write_text("[1, 2, 3]", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["saxsabs", "parse-header", "--header-json", str(path)],
+    )
+
+    with pytest.raises(SystemExit):
+        main()
+    error = capsys.readouterr().err
+    assert "parse-header failed" in error
+    assert "Traceback" not in error
+
+
+def test_cli_parse_external1d_reports_missing_file_without_traceback(
+    tmp_path: Path, capsys, monkeypatch
+):
+    missing = tmp_path / "missing.dat"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["saxsabs", "parse-external1d", "--input", str(missing)],
+    )
+
+    with pytest.raises(SystemExit):
+        main()
+    error = capsys.readouterr().err
+    assert "parse-external1d failed" in error
+    assert "Traceback" not in error
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["estimate-k", "--meas"],
+        ["subtract-buffer", "--sample"],
+        ["subtract-fluorescence", "--sample"],
+    ],
+)
+def test_cli_expected_missing_input_errors_are_concise(
+    tmp_path: Path, capsys, monkeypatch, command
+):
+    missing = tmp_path / "missing.dat"
+    if command[0] == "estimate-k":
+        argv = ["saxsabs", *command, str(missing)]
+    elif command[0] == "subtract-buffer":
+        argv = ["saxsabs", *command, str(missing), "--buffer", str(missing)]
+    else:
+        argv = [
+            "saxsabs",
+            *command,
+            str(missing),
+            "--method",
+            "constant",
+            "--f0",
+            "0",
+        ]
+    monkeypatch.setattr(sys, "argv", argv)
+
+    with pytest.raises(SystemExit):
+        main()
+    error = capsys.readouterr().err
+    assert f"{command[0]} failed" in error
+    assert "Traceback" not in error
+
+
 def test_cli_norm_factor_rejects_non_finite_result(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

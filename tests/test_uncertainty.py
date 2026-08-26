@@ -122,6 +122,50 @@ def test_system_coverage_factor_is_reported_separately_from_combined_status():
     np.testing.assert_allclose(budget.expanded_uncertainty, [2.0])
 
 
+def test_uncertainty_combination_overflow_raises_instead_of_partial_status():
+    kwargs = {
+        "intensity": np.array([1.0e308]),
+        "statistical_standard_uncertainty": 1.0e308,
+        "k_relative_standard_uncertainty": 0.0,
+        "standard_relative_standard_uncertainty": 0.0,
+        "transmission_relative_standard_uncertainty": 0.0,
+        "monitor_relative_standard_uncertainty": 0.0,
+        "thickness_relative_standard_uncertainty": 0.0,
+        "mu_relative_standard_uncertainty": 0.0,
+        "alpha_standard_uncertainty": 0.0,
+    }
+
+    with pytest.raises(ValueError, match="combined standard uncertainty"):
+        propagate_absolute_uncertainty(**kwargs)
+
+
+def test_uncertainty_expanded_overflow_raises():
+    kwargs = {
+        "intensity": np.array([1.0]),
+        "statistical_standard_uncertainty": 1.0e154,
+        "k_relative_standard_uncertainty": 0.0,
+        "standard_relative_standard_uncertainty": 0.0,
+        "transmission_relative_standard_uncertainty": 0.0,
+        "monitor_relative_standard_uncertainty": 0.0,
+        "thickness_relative_standard_uncertainty": 0.0,
+        "mu_relative_standard_uncertainty": 0.0,
+        "alpha_standard_uncertainty": 0.0,
+        "coverage_factor": 1.0e308,
+    }
+
+    with pytest.raises(ValueError, match="expanded uncertainty"):
+        propagate_absolute_uncertainty(**kwargs)
+
+
+def test_uncertainty_overflow_is_not_masked_by_unknown_components():
+    with pytest.raises(ValueError, match="expanded uncertainty"):
+        propagate_absolute_uncertainty(
+            intensity=np.array([1.0]),
+            statistical_standard_uncertainty=1.0e154,
+            coverage_factor=1.0e308,
+        )
+
+
 @pytest.mark.parametrize(
     ("keyword", "value"),
     [

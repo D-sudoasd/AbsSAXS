@@ -38,10 +38,12 @@ class BufferSubtractionResult:
         Propagated uncertainty.
     alpha : float
         Scaling factor applied to the buffer curve.
-    high_q_residual_mean : float
-        Mean intensity in the high-*q* diagnostic window (should be ≈0).
-    high_q_check_passed : bool
-        *True* if |mean| < 3 × σ in the diagnostic window.
+    high_q_residual_mean : float | None
+        Mean intensity in the high-*q* diagnostic window (should be ≈0), or
+        ``None`` when fewer than three points make the diagnostic undefined.
+    high_q_check_passed : bool | None
+        *True* if |mean| < 3 × σ in the diagnostic window, *False* when it
+        fails, or ``None`` when the diagnostic was not performed.
     err_statistical : np.ndarray
         Statistical component, excluding the uncertainty contribution from alpha.
     alpha_uncertainty : float | None
@@ -52,8 +54,8 @@ class BufferSubtractionResult:
     i_subtracted: np.ndarray
     err_subtracted: np.ndarray
     alpha: float
-    high_q_residual_mean: float = 0.0
-    high_q_check_passed: bool = True
+    high_q_residual_mean: float | None = None
+    high_q_check_passed: bool | None = None
     alpha_uncertainty: float | None = None
     err_statistical: np.ndarray | None = None
 
@@ -67,6 +69,16 @@ def _as_1d_float_array(name: str, values: np.ndarray | None, *, require_finite: 
     if require_finite and not np.all(np.isfinite(arr)):
         raise ValueError(f"{name} contains non-finite values")
     return arr
+
+
+def _square_uncertainty(name: str, values: np.ndarray) -> np.ndarray:
+    """Square uncertainty values while rejecting finite overflow."""
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        squared = np.square(values)
+    if np.any(np.isinf(squared)):
+        raise ValueError(f"{name} uncertainty propagation overflowed")
+    return squared
 
 
 def _prepare_source_grid(
@@ -123,7 +135,7 @@ def _prepare_variance_grid(
     """
     order = np.argsort(q_source)
     q_sorted = q_source[order]
-    variance_sorted = np.square(sigma_source[order])
+    variance_sorted = _square_uncertainty(label, sigma_source[order])
     uq, inv = np.unique(q_sorted, return_inverse=True)
     if uq.size < 2:
         raise ValueError(f"{label} q grid must contain at least 2 unique points")
@@ -134,7 +146,11 @@ def _prepare_variance_grid(
     for group in range(uq.size):
         group_variance = variance_sorted[inv == group]
         if np.all(np.isfinite(group_variance)):
-            variance_of_mean[group] = float(group_variance.sum() / group_variance.size**2)
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                value = group_variance.sum() / group_variance.size**2
+            if not np.isfinite(value):
+                raise ValueError(f"{label} uncertainty propagation overflowed")
+            variance_of_mean[group] = float(value)
     return uq, variance_of_mean
 
 
@@ -293,19 +309,36 @@ def subtract_buffer(
             q_s, q_b, e_b, label="buffer uncertainty"
         )
     else:
-        buffer_variance = np.square(e_b)
+        buffer_variance = _square_uncertainty("err_buffer", e_b)
 
     # Subtraction
-    i_sub = i_s - alpha * i_b
+    with np.errstate(over="ignore", invalid="ignore"):
+        i_sub = i_s - alpha * i_b
+    if not np.all(np.isfinite(i_sub)):
+        raise ValueError("buffer subtraction produced non-finite intensity")
 
     # Unknown input errors intentionally yield NaN, never an optimistic partial budget.
-    variance_statistical = np.square(e_s) + alpha**2 * buffer_variance
+    with np.errstate(over="ignore", invalid="ignore"):
+        alpha_squared = np.square(alpha)
+    if np.isinf(alpha_squared):
+        raise ValueError("buffer uncertainty propagation overflowed")
+    variance_sample = _square_uncertainty("err_sample", e_s)
+    with np.errstate(over="ignore", invalid="ignore"):
+        variance_statistical = variance_sample + alpha_squared * buffer_variance
+    if np.any(np.isinf(variance_statistical)):
+        raise ValueError("buffer uncertainty propagation overflowed")
     err_statistical = np.sqrt(variance_statistical)
     variance_sub = variance_statistical.copy()
     if alpha_uncertainty is None:
         variance_sub = variance_sub + np.full_like(i_b, np.nan)
     else:
-        variance_sub = variance_sub + np.square(i_b * alpha_uncertainty)
+        with np.errstate(over="ignore", invalid="ignore"):
+            alpha_term = i_b * alpha_uncertainty
+        alpha_variance = _square_uncertainty("alpha", alpha_term)
+        with np.errstate(over="ignore", invalid="ignore"):
+            variance_sub = variance_sub + alpha_variance
+        if np.any(np.isinf(variance_sub)):
+            raise ValueError("buffer uncertainty propagation overflowed")
     err_sub = np.sqrt(variance_sub)
 
     # High-q diagnostic
@@ -315,8 +348,8 @@ def subtract_buffer(
         residual_std = float(np.std(i_sub[mask]))
         check_ok = abs(residual_mean) < 3.0 * max(residual_std, 1e-30)
     else:
-        residual_mean = 0.0
-        check_ok = True  # not enough points for diagnostic
+        residual_mean = None
+        check_ok = None  # not enough points for diagnostic
 
     return BufferSubtractionResult(
         q=q_s,

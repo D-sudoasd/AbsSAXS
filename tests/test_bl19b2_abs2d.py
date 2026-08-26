@@ -413,6 +413,20 @@ def test_build_output_paths_preserves_relative_folder_and_uses_abs2d_suffix(tmp_
     assert paths.preview.name == "frame_001_preview.png"
 
 
+def test_validate_output_collisions_rejects_tif_and_tiff_same_stem(tmp_path: Path):
+    root = tmp_path / "dat001"
+    sample_dir = root / "3#_sample"
+    sample_dir.mkdir(parents=True)
+    sources = [sample_dir / "frame.tif", sample_dir / "frame.tiff"]
+
+    with pytest.raises(ValueError, match="generated output collision"):
+        bl19b2.validate_output_collisions(
+            sources,
+            input_root=root,
+            output_root=tmp_path / "out",
+        )
+
+
 def test_parse_pydidas_cali_yaml_converts_geometry_units(tmp_path: Path):
     mask = tmp_path / "Mask.edf"
     cali = tmp_path / "Cali.yaml"
@@ -684,6 +698,20 @@ def test_frame_qc_row_from_metadata_restores_existing_resume_summary(
     assert row["k_factor"] == 11.4
     assert row["uncertainty_status"] == "partial"
     assert "BG ABS" in row["warnings"]
+
+
+def test_resume_package_root_handles_input_directory_named_metadata(tmp_path: Path):
+    input_root = tmp_path / "input"
+    source = input_root / "metadata" / "frame.tif"
+    output_root = tmp_path / "out"
+    paths = build_output_paths(
+        source,
+        input_root=input_root,
+        output_root=output_root,
+    )
+
+    assert paths.metadata == output_root / "metadata" / "metadata" / "frame_abs2d.json"
+    assert bl19b2._package_root_from_output_paths(paths) == output_root.resolve()
 
 
 def test_subtract_dark_scales_dark_to_sample_exposure():

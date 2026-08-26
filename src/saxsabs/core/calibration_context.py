@@ -139,12 +139,50 @@ def builtin_reference_identity(
     raise ValueError(f"standard {key!r} does not have a built-in reference model")
 
 
-def _validate_optional_sha256(value: str | None, *, field_name: str) -> None:
+def _validate_optional_sha256(value: str | None, *, field_name: str) -> str | None:
     if value is None:
-        return
+        return None
     text = str(value).strip().lower()
     if len(text) != 64 or any(character not in "0123456789abcdef" for character in text):
         raise ValueError(f"{field_name} must be a 64-character SHA-256 digest or null")
+    return text
+
+
+def _validate_required_sha256(value: object, *, field_name: str) -> str:
+    """Validate and canonicalize a non-null SHA-256 sequence entry."""
+
+    normalized = _validate_optional_sha256(value, field_name=field_name)
+    if normalized is None:
+        raise ValueError(f"{field_name} entries must be non-null SHA-256 digests")
+    return normalized
+
+
+_ORDERED_PROVENANCE_SEQUENCE_FIELDS = (
+    "background_data_sha256",
+    "dark_data_sha256",
+    "background_monitors",
+    "background_transmissions",
+    "background_exposure_s",
+    "dark_exposure_s",
+)
+
+
+def _require_ordered_sequence(
+    value: object,
+    *,
+    field_name: str,
+    allow_none: bool = False,
+) -> tuple[object, ...] | None:
+    """Accept only deterministic list/tuple provenance containers."""
+
+    if value is None and allow_none:
+        return None
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(
+            f"{field_name} must be an ordered list or tuple"
+            + (" or null" if allow_none else "")
+        )
+    return tuple(value)
 
 
 def _validate_positive(value: float | None, *, field_name: str) -> None:
@@ -228,8 +266,13 @@ class CalibrationContext:
             raise ValueError("monitor_mode must be 'rate' or 'integrated'")
         if not str(self.formula_version).strip():
             raise ValueError("formula_version is required")
-        if not str(self.poni_sha256).strip():
+        poni_sha256 = _validate_optional_sha256(
+            self.poni_sha256,
+            field_name="poni_sha256",
+        )
+        if poni_sha256 is None:
             raise ValueError("poni_sha256 is required")
+        object.__setattr__(self, "poni_sha256", poni_sha256)
         standard_key = normalize_standard_key(self.standard_key)
         object.__setattr__(self, "standard_key", standard_key)
         thickness = float(self.standard_thickness_cm)
@@ -250,37 +293,46 @@ class CalibrationContext:
             if not math.isfinite(factor) or factor < -1 or factor > 1:
                 raise ValueError("polarization_factor must be finite and between -1 and 1")
 
-        sequence_fields = (
-            "background_data_sha256",
-            "dark_data_sha256",
-            "background_monitors",
-            "background_transmissions",
-            "background_exposure_s",
-            "dark_exposure_s",
+        for field_name in _ORDERED_PROVENANCE_SEQUENCE_FIELDS:
+            object.__setattr__(
+                self,
+                field_name,
+                _require_ordered_sequence(
+                    getattr(self, field_name),
+                    field_name=field_name,
+                ),
+            )
+        object.__setattr__(
+            self,
+            "q_window",
+            _require_ordered_sequence(
+                self.q_window,
+                field_name="q_window",
+                allow_none=True,
+            ),
         )
-        for field_name in sequence_fields:
-            object.__setattr__(self, field_name, tuple(getattr(self, field_name)))
-        if self.q_window is not None:
-            object.__setattr__(self, "q_window", tuple(self.q_window))
 
-        _validate_optional_sha256(
-            self.standard_data_sha256,
-            field_name="standard_data_sha256",
-        )
-        _validate_optional_sha256(
-            self.reference_curve_sha256,
-            field_name="reference_curve_sha256",
-        )
-        _validate_optional_sha256(
-            self.reference_canonical_sha256,
-            field_name="reference_canonical_sha256",
-        )
-        for field_name, values in (
-            ("background_data_sha256", self.background_data_sha256),
-            ("dark_data_sha256", self.dark_data_sha256),
+        for field_name in (
+            "mask_sha256",
+            "flat_sha256",
+            "standard_data_sha256",
+            "reference_curve_sha256",
+            "reference_canonical_sha256",
         ):
-            for value in values:
-                _validate_optional_sha256(value, field_name=field_name)
+            object.__setattr__(
+                self,
+                field_name,
+                _validate_optional_sha256(
+                    getattr(self, field_name),
+                    field_name=field_name,
+                ),
+            )
+        for field_name in ("background_data_sha256", "dark_data_sha256"):
+            raw_values = getattr(self, field_name)
+            normalized_values = tuple(
+                _validate_required_sha256(value, field_name=field_name) for value in raw_values
+            )
+            object.__setattr__(self, field_name, normalized_values)
 
         _validate_positive(self.standard_monitor, field_name="standard_monitor")
         _validate_positive(self.standard_exposure_s, field_name="standard_exposure_s")
@@ -389,17 +441,18 @@ class CalibrationContext:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "CalibrationContext":
         normalized = dict(value)
-        for field_name in (
-            "background_data_sha256",
-            "dark_data_sha256",
-            "background_monitors",
-            "background_transmissions",
-            "background_exposure_s",
-            "dark_exposure_s",
-            "q_window",
-        ):
-            if field_name in normalized and normalized[field_name] is not None:
-                normalized[field_name] = tuple(normalized[field_name])
+        for field_name in _ORDERED_PROVENANCE_SEQUENCE_FIELDS:
+            if field_name in normalized:
+                _require_ordered_sequence(
+                    normalized[field_name],
+                    field_name=field_name,
+                )
+        if "q_window" in normalized:
+            _require_ordered_sequence(
+                normalized["q_window"],
+                field_name="q_window",
+                allow_none=True,
+            )
         return cls(**normalized)
 
     def fingerprint(self) -> str:

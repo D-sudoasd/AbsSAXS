@@ -22,6 +22,7 @@ import traceback
 import math
 import pandas as pd
 import datetime
+import importlib.metadata as importlib_metadata
 from io import StringIO
 import re
 import unicodedata
@@ -40,9 +41,23 @@ def _read_package_version() -> str:
     try:
         text = version_file.read_text(encoding="utf-8")
     except OSError:
-        return "2.0.0"
+        text = ""
     match = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.MULTILINE)
-    return match.group(1) if match else "2.0.0"
+    if match:
+        return match.group(1)
+    try:
+        metadata_version = importlib_metadata.version("saxsabs")
+        if metadata_version:
+            return metadata_version
+    except Exception:
+        pass
+    try:
+        import saxsabs
+
+        package_version = getattr(saxsabs, "__version__", None)
+    except Exception:
+        package_version = None
+    return str(package_version) if package_version else "unknown"
 
 
 APP_VERSION = _read_package_version()
@@ -65,6 +80,7 @@ I18N = {
         "app_title": f"{APP_NAME} v{APP_VERSION}",
         "header_title": f"{APP_NAME}  |  Absolute Intensity Calibration",
         "theme_toggle": "🌓 Theme",
+        "theme_unavailable": "unavailable",
         "lang_toggle_to_zh": "中文",
         "lang_toggle_to_en": "English",
         "tab1": "\U0001f4d0  1. K-Factor Calibration",
@@ -495,6 +511,7 @@ I18N = {
         "app_title": f"{APP_NAME} v{APP_VERSION}",
         "header_title": f"{APP_NAME}｜绝对强度校正",
         "theme_toggle": "🌓 切换深色/浅色模式",
+        "theme_unavailable": "不可用",
         "lang_toggle_to_zh": "中文",
         "lang_toggle_to_en": "English",
         "tab1": "\U0001f4d0  1. K 因子标定",
@@ -1115,6 +1132,10 @@ I18N["zh"].update({
 
 try:
     from saxs_ui_kit import apply_ios_theme, promote_primary_buttons, toggle_theme, ToolTip
+
+    def theme_backend_available():
+        return True
+
 except Exception:
     # ---- sv_ttk Sun-Valley theme (lightweight Win11-style) ----
     try:
@@ -1122,20 +1143,42 @@ except Exception:
     except ImportError:
         _sv_ttk = None
 
+    def theme_backend_available():
+        return _sv_ttk is not None
+
     def apply_ios_theme(root):
         if _sv_ttk is not None:
             _sv_ttk.set_theme("light")
+            return True
+        if root is not None:
+            try:
+                root._saxsabs_theme_unavailable = True
+            except Exception:
+                pass
+        return False
 
     def promote_primary_buttons(root):
         return None  # sv_ttk handles Accent.TButton natively
 
     def toggle_theme(root):
-        if _sv_ttk is not None:
-            _sv_ttk.toggle_theme()
-            # update native tk widgets after theme switch
-            app = getattr(root, '_app_ref', None)
+        if _sv_ttk is None:
+            app = getattr(root, "_app_ref", None)
             if app is not None:
-                app._sync_native_widget_colors()
+                callback = getattr(app, "_report_theme_unavailable", None)
+                if callback is not None:
+                    callback()
+            else:
+                try:
+                    root._saxsabs_theme_unavailable = True
+                except Exception:
+                    pass
+            return False
+        _sv_ttk.toggle_theme()
+        # update native tk widgets after theme switch
+        app = getattr(root, '_app_ref', None)
+        if app is not None:
+            app._sync_native_widget_colors()
+        return True
 
     class ToolTip:
         """Improved cross-platform tooltip with smarter positioning and i18n support."""
@@ -1220,13 +1263,75 @@ try:
 except Exception:
     def load_session(path):
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            payload = json.load(f)
+        return _validate_session_payload(payload)
 
     def session_geometry(session_payload):
         if not isinstance(session_payload, dict):
             return {}
         geom = session_payload.get("geometry", {})
         return geom if isinstance(geom, dict) else {}
+
+
+def _validate_session_payload(payload):
+    """Validate session fields before they can mutate Workbench state.
+
+    Session files are user-authored provenance inputs.  Missing optional fields
+    remain backward compatible, while present schema, numeric, and geometry
+    values are rejected explicitly instead of being coerced to NaN or silently
+    interpreted relative to the process CWD.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("session payload must be a JSON object")
+    schema = payload.get("schema")
+    if schema is not None and str(schema).strip() not in {
+        "saxsabs.session.v1",
+        "saxsabs.workbench.session.v1",
+    }:
+        raise ValueError(f"unsupported session schema: {schema!r}")
+    geometry = payload.get("geometry")
+    if geometry is not None:
+        if not isinstance(geometry, dict):
+            raise ValueError("session geometry must be an object")
+        for key in ("px_mm", "wl_A", "dist_mm"):
+            if key not in geometry or geometry[key] is None:
+                continue
+            try:
+                value = float(geometry[key])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"session geometry {key} must be numeric") from exc
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"session geometry {key} must be finite and > 0")
+    calibration = payload.get("calibration", {})
+    if calibration is not None and not isinstance(calibration, dict):
+        raise ValueError("session calibration must be an object")
+    calibration = calibration if isinstance(calibration, dict) else {}
+    k_value = calibration.get("k_factor", payload.get("k_factor"))
+    if k_value is not None:
+        try:
+            k_numeric = float(k_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("session k_factor must be numeric") from exc
+        if not np.isfinite(k_numeric) or k_numeric <= 0:
+            raise ValueError("session k_factor must be finite and > 0")
+    path_fields = {
+        "data_path",
+        "poni_path",
+        "bg_path",
+        "dark_path",
+        "std_path",
+        "calibration_record_path",
+        "record_path",
+    }
+    for key in path_fields:
+        value = payload.get(key)
+        if value is not None and not isinstance(value, (str, Path)):
+            raise ValueError(f"session {key} must be a path string")
+    for key in path_fields:
+        value = calibration.get(key)
+        if value is not None and not isinstance(value, (str, Path)):
+            raise ValueError(f"session calibration {key} must be a path string")
+    return payload
 
 try:
     import saxs_mpl_style
@@ -1859,7 +1964,7 @@ class SAXSAbsWorkbenchApp:
         # Apply shared scientific plot defaults globally.
         saxs_mpl_style.apply_nature_style("raw_inspection")
         
-        self.set_style()
+        self.set_style(initialize_theme=True)
         self._tooltips = []
         self._output_format_combos = []
         
@@ -1872,6 +1977,11 @@ class SAXSAbsWorkbenchApp:
 
         self.btn_theme = ttk.Button(top_bar, text=self.tr("theme_toggle"), command=lambda: toggle_theme(self.root))
         self.btn_theme.grid(row=0, column=1, sticky="e", padx=(8, 0))
+        if not theme_backend_available():
+            self.btn_theme.configure(
+                state="disabled",
+                text=f"{self.tr('theme_toggle')} ({self.tr('theme_unavailable')})",
+            )
 
         self.btn_lang = ttk.Button(top_bar, text=self._lang_button_text(), width=10, command=self.toggle_language)
         self.btn_lang.grid(row=0, column=2, sticky="e", padx=(8, 0))
@@ -2648,9 +2758,11 @@ class SAXSAbsWorkbenchApp:
     def confirm_action(self, message_key):
         return messagebox.askyesno(self.tr("confirm_clear_title"), self.tr(message_key))
 
-    def set_style(self):
-        # Apply Sun-Valley theme first (light by default)
-        apply_ios_theme(self.root)
+    def set_style(self, *, initialize_theme=False):
+        # Apply the light default only during initialization.  Re-applying it
+        # during a user toggle would immediately erase the selected dark theme.
+        if initialize_theme:
+            apply_ios_theme(self.root)
         style = ttk.Style()
         # Only fall back to clam if sv_ttk is not active
         current = style.theme_use()
@@ -2765,6 +2877,19 @@ class SAXSAbsWorkbenchApp:
         if not hasattr(self, "_scroll_canvases"):
             self._scroll_canvases: list = []
         self.root._app_ref = self  # allow toggle_theme callback to reach us
+
+    def _report_theme_unavailable(self):
+        message = "Theme control unavailable: sv_ttk is not installed."
+        if hasattr(self, "_status_var"):
+            self._status_var.set(message)
+        if hasattr(self, "btn_theme"):
+            try:
+                self.btn_theme.configure(
+                    state="disabled",
+                    text=f"{self.tr('theme_toggle')} ({self.tr('theme_unavailable')})",
+                )
+            except Exception:
+                pass
 
     def _register_native_widget(self, widget):
         """Track a tk.Text or tk.Listbox so its colours follow the theme."""
@@ -7289,7 +7414,7 @@ class SAXSAbsWorkbenchApp:
             return
 
         rows = []
-        files = list(dict.fromkeys(self.t3_files))
+        files, _queue_changed = self.normalize_t3_queue()
         failed_files = 0
         risky_files = 0
         pipeline_mode = self.t3_pipeline_mode.get().strip().lower()
@@ -7578,21 +7703,16 @@ class SAXSAbsWorkbenchApp:
 
     def run_external_1d_batch(self):
         try:
-            self._require_current_workbench_preflight("t3")
+            files, _queue_changed = self.normalize_t3_queue()
             if bool(self.t3_resume_enabled.get()):
                 raise ValueError(
                     "Tab3 formal output does not permit legacy exists-only resume."
                 )
-            if not self.t3_files:
+            if not files:
                 raise ValueError("队列为空：请先添加外部1D文件。")
-
-            files = list(dict.fromkeys(self.t3_files))
-            if len(files) < len(self.t3_files):
-                self.t3_files = files
-                self.lb_ext1d.delete(0, tk.END)
-                for f in self.t3_files:
-                    self.lb_ext1d.insert(tk.END, Path(f).name)
-                self.refresh_external_1d_status()
+            # Approval must bind the final normalized queue.  Duplicate removal
+            # invalidates any approval that was made for the old queue.
+            self._require_current_workbench_preflight("t3")
 
             k = float(self.global_vars["k_factor"].get())
             if not np.isfinite(k) or k <= 0:
@@ -8714,9 +8834,6 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 robust_min_points=3,
                 robust_zero_mad_relative_tolerance=1e-12,
             )
-            self.global_vars["k_factor"].set(k_val)
-            self.global_vars["k_solid_angle"].set("on" if apply_solid_angle else "off")
-            
             # Report
             self.report("-" * 30)
             self.report(self.tr("rpt_calib_ok"))
@@ -8809,11 +8926,35 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 "CalibrationContextFingerprint": calibration_context.fingerprint(),
             })
             df.to_csv(save_path, index=False)
+            # Read back the scientific check artifact before it can become the
+            # active calibration state.  A successful write call alone does not
+            # prove that the expected columns and values reached disk.
+            check_readback = pd.read_csv(save_path)
+            required_check_columns = {
+                "Q",
+                "I_Abs",
+                "Error_Statistical",
+                "Error_Partial_K_Included",
+                "CalibrationContextFingerprint",
+            }
+            if not required_check_columns.issubset(check_readback.columns):
+                raise ValueError("calibration check readback is missing required columns")
+            if check_readback.empty or not np.all(np.isfinite(check_readback["Q"].to_numpy())):
+                raise ValueError("calibration check readback is empty or non-finite")
+            if set(check_readback["CalibrationContextFingerprint"].astype(str)) != {
+                calibration_context.fingerprint()
+            }:
+                raise ValueError("calibration check readback context fingerprint mismatch")
             context_path = calibration_output_dir / f"calibration_context_{run_id}.json"
             context_path.write_text(
                 json.dumps(calibration_context.to_dict(), indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+            context_readback = json.loads(context_path.read_text(encoding="utf-8"))
+            if not isinstance(context_readback, dict):
+                raise ValueError("calibration context readback is not an object")
+            if context_readback != calibration_context.to_dict():
+                raise ValueError("calibration context readback mismatch")
             record_path = calibration_output_dir / f"calibration_record_{run_id}.json"
             self.save_calibration_record(
                 record_path,
@@ -8835,16 +8976,6 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 reference_i=(i_ref if std_key not in {"SRM3600", "Water_20C"} else None),
             )
             validated_record = _core_read_calibration_record(record_path)
-            self.calibration_context = validated_record.calibration_context
-            self.calibration_record_provenance_complete = bool(
-                validated_record.provenance_complete
-            )
-            self.calibration_record_source_files_verified = bool(
-                validated_record.provenance_complete
-            )
-            self.calibration_k_value = float(k_val)
-            self.calibration_uncertainty = calibration_uncertainty
-            self.calibration_record_path = validated_record.record_path
             self.report(f"Saved profile: {save_path.name}")
             self.report(f"Saved calibration context: {context_path.name}")
             provenance_missing = validated_record.provenance_missing
@@ -8874,6 +9005,24 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 calibration_record_path=record_path,
                 calibration_uncertainty=calibration_uncertainty,
             )
+            # Commit the newly calibrated state only after every scientific
+            # artifact has been written, read back, and the history transaction
+            # has succeeded.  Any exception above therefore leaves the prior K
+            # and CalibrationContext untouched.
+            self.global_vars["k_factor"].set(k_val)
+            self.global_vars["k_solid_angle"].set(
+                "on" if apply_solid_angle else "off"
+            )
+            self.calibration_context = validated_record.calibration_context
+            self.calibration_record_provenance_complete = bool(
+                validated_record.provenance_complete
+            )
+            self.calibration_record_source_files_verified = bool(
+                validated_record.provenance_complete
+            )
+            self.calibration_k_value = float(k_val)
+            self.calibration_uncertainty = calibration_uncertainty
+            self.calibration_record_path = validated_record.record_path
             self.report("K history updated.")
             
         except Exception as e:
@@ -9162,6 +9311,92 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             modes.append("radial_chi")
         return modes
 
+    def normalize_t2_queue(self):
+        """Deduplicate the Tab2 queue before any approval or execution check."""
+        original = list(getattr(self, "t2_files", []) or [])
+        normalized = []
+        seen = set()
+        for value in original:
+            text = str(value).strip()
+            if not text:
+                continue
+            try:
+                key = str(Path(text).expanduser().resolve()).casefold()
+            except OSError:
+                key = text.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(text)
+        changed = normalized != original
+        if changed:
+            self.t2_files = normalized
+            listbox = getattr(self, "lb_batch", None)
+            if listbox is not None:
+                try:
+                    listbox.delete(0, tk.END)
+                    for value in normalized:
+                        listbox.insert(tk.END, Path(value).name)
+                except Exception:
+                    pass
+            self.refresh_queue_status()
+            self._invalidate_workbench_preflight("t2")
+        return normalized, changed
+
+    def normalize_t3_queue(self):
+        """Deduplicate the Tab3 queue before preflight approval or execution."""
+        original = list(getattr(self, "t3_files", []) or [])
+        normalized = []
+        seen = set()
+        for value in original:
+            text = str(value).strip()
+            if not text:
+                continue
+            try:
+                key = str(Path(text).expanduser().resolve()).casefold()
+            except OSError:
+                key = text.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(text)
+        changed = normalized != original
+        if changed:
+            self.t3_files = normalized
+            listbox = getattr(self, "lb_ext1d", None)
+            if listbox is not None:
+                try:
+                    listbox.delete(0, tk.END)
+                    for value in normalized:
+                        listbox.insert(tk.END, Path(value).name)
+                except Exception:
+                    pass
+            self.refresh_external_1d_status()
+            self._invalidate_workbench_preflight("t3")
+        return normalized, changed
+
+    def validate_t2_mode_contract(self, selected_modes, fluorescence_enabled):
+        """Reject fluorescence for radial-chi, whose output is not corrected."""
+        if "radial_chi" in set(selected_modes or ()) and bool(fluorescence_enabled):
+            raise ValueError(
+                "radial_chi output does not apply fluorescence correction; disable "
+                "fluorescence or select a corrected 1D Q output before continuing."
+            )
+
+    @staticmethod
+    def validate_fixed_reference_shape(sample_path, reference_payload):
+        """Use the execution loader to verify a fixed reference/sample shape pair."""
+        loaded_sample = _workbench_load_detector_image(sample_path, dtype=None)
+        sample_shape = tuple(np.asarray(loaded_sample.data).shape)
+        reference_shape = tuple(
+            np.asarray(reference_payload["fixed_dark_data"]).shape
+        )
+        if sample_shape != reference_shape:
+            raise ValueError(
+                f"sample/reference shape mismatch {sample_shape} vs {reference_shape}"
+            )
+        return sample_shape
+
     def add_bg_library_files(self):
         fs = filedialog.askopenfilenames(filetypes=[("Image", "*.tif *.tiff *.edf *.cbf")])
         initial_count = len(self.t2_bg_candidates)
@@ -9279,6 +9514,11 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         reason = ""
 
         try:
+            fluorescence_payload = context.get("fluorescence") or {}
+            self.validate_t2_mode_contract(
+                context.get("selected_modes", ()),
+                fluorescence_payload.get("enabled", False),
+            )
             run_policy = context.get("run_policy")
             if run_policy is None:
                 run_policy = SimpleNamespace(
@@ -10041,7 +10281,12 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         }
     def run_batch(self):
         try:
-            self._require_current_workbench_preflight("t2")
+            original_queue_count = len(getattr(self, "t2_files", []) or [])
+            files, queue_changed = self.normalize_t2_queue()
+            if queue_changed:
+                self.log(
+                    f"[提示] 队列去重：移除重复文件 {original_queue_count - len(files)} 个"
+                )
             if str(self.t2_calc_mode.get()).strip().lower() != "fixed":
                 raise ValueError(
                     "Tab2 formal output requires fixed thickness; legacy per-frame "
@@ -10051,8 +10296,11 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 raise ValueError(
                     "Tab2 formal output does not permit legacy exists-only resume."
                 )
-            if not self.t2_files:
+            if not files:
                 raise ValueError("队列为空：请先添加样品文件。")
+            # Approval must cover the normalized queue and every setting used
+            # below; a stale approval is rejected after duplicate removal.
+            self._require_current_workbench_preflight("t2")
             k = float(self.global_vars["k_factor"].get())
             bg_p = self.global_vars["bg_path"].get()
             dk_p = self.global_vars["dark_path"].get()
@@ -10069,16 +10317,11 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             self.log(f"[配置] I0 归一化模式: {monitor_mode} (norm={self.monitor_norm_formula(monitor_mode)})")
             self.log(f"[配置] SolidAngle 修正: {'ON' if bool(self.t2_apply_solid_angle.get()) else 'OFF'}")
 
-            files = list(dict.fromkeys(self.t2_files))
-            if len(files) < len(self.t2_files):
-                self.log(f"[提示] 队列去重：移除重复文件 {len(self.t2_files) - len(files)} 个")
-                self.t2_files = files
-                self.lb_batch.delete(0, tk.END)
-                for f in self.t2_files:
-                    self.lb_batch.insert(tk.END, Path(f).name)
-                self.refresh_queue_status()
-
             selected_modes = self.get_selected_modes()
+            fluorescence_enabled = bool(
+                getattr(getattr(self, "t2_fluo_enabled", None), "get", lambda: False)()
+            )
+            self.validate_t2_mode_contract(selected_modes, fluorescence_enabled)
             output_format = str(
                 getattr(self, "t2_output_format", None).get()
                 if getattr(self, "t2_output_format", None) is not None
@@ -10930,7 +11173,12 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
     def dry_run(self):
         if not self.t2_files:
             return
-        files = list(dict.fromkeys(self.t2_files))
+        original_queue_count = len(self.t2_files)
+        files, queue_changed = self.normalize_t2_queue()
+        if queue_changed:
+            self.log(
+                f"[提示] 队列去重：移除重复文件 {original_queue_count - len(files)} 个"
+            )
         rows = []
         failed_files = 0
         risky_files = 0
@@ -10941,6 +11189,15 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         calibration_gate_error = None
         active_calibration_context = None
         formal_config_errors = []
+        try:
+            self.validate_t2_mode_contract(
+                selected_modes,
+                bool(
+                    getattr(getattr(self, "t2_fluo_enabled", None), "get", lambda: False)()
+                ),
+            )
+        except ValueError as exc:
+            formal_config_errors.append(str(exc))
         if str(mode).strip().lower() != "fixed":
             formal_config_errors.append(
                 "Formal Tab2 output requires fixed thickness; per-frame "
@@ -11021,12 +11278,39 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         mu = thickness_config["mu_cm_inv"]
         inst_issues = []
         sample_norms = []
-        bg_norm = self.compute_norm_factor(
-            self.global_vars["bg_exp"].get(),
-            self.global_vars["bg_i0"].get(),
-            1.0,
-            monitor_mode,
-        )
+        bg_norm = np.nan
+        fixed_reference = None
+        if str(self.t2_ref_mode.get()).strip().lower() == "fixed":
+            try:
+                bg_var = self.global_vars.get("bg_path")
+                dark_var = self.global_vars.get("dark_path")
+                if bg_var is None or dark_var is None:
+                    raise ValueError("fixed BG/Dark reference variables are unavailable")
+                fixed_reference = self.prepare_batch_references(
+                    ref_mode="fixed",
+                    bg_path=bg_var.get(),
+                    dark_path=dark_var.get(),
+                    monitor_mode=monitor_mode,
+                )
+                bg_norm = float(fixed_reference["fixed_bg_norm"])
+            except (OSError, RuntimeError, TypeError, ValueError) as exc:
+                formal_config_errors.append(
+                    f"Fixed BG/Dark reference validation failed: {exc}"
+                )
+                warnings.append(
+                    f"Fixed BG/Dark reference validation failed: {exc}"
+                )
+        else:
+            try:
+                bg_norm = self.compute_norm_factor(
+                    self.global_vars["bg_exp"].get(),
+                    self.global_vars["bg_i0"].get(),
+                    1.0,
+                    monitor_mode,
+                )
+            except (TypeError, ValueError) as exc:
+                formal_config_errors.append(f"BG normalization invalid: {exc}")
+                warnings.append(f"BG normalization invalid: {exc}")
 
         export_cal2d = bool(
             getattr(self, "t2_export_cal2d", None).get()
@@ -11135,6 +11419,14 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                         stat = thickness_config_error
                     else:
                         d_mm = float(thickness_config["fixed_thickness_cm"]) * 10.0
+
+            if self.t2_ref_mode.get() == "fixed" and fixed_reference is not None:
+                try:
+                    self.validate_fixed_reference_shape(fp, fixed_reference)
+                except ValueError as exc:
+                    stat = f"Error: {exc}"
+                except Exception as exc:
+                    stat = f"Error: sample image unreadable: {exc}"
 
             if self.t2_ref_mode.get() == "auto":
                 try:
@@ -12103,7 +12395,22 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                     raise ValueError("请选择标准参考曲线文件。")
                 from saxsabs.io.parsers import read_external_1d_profile
                 prof = read_external_1d_profile(ref_path)
-                q_user = prof["x"]
+                # Reuse the same strict axis boundary as external 1D input.
+                # Reference curves are physical Q data for K fitting; accepting
+                # raw x values here would silently mix nm^-1, chi, or 2theta.
+                prepared = self.prepare_external_profile_axis(
+                    ref_path,
+                    prof,
+                    mode="auto",
+                )
+                if prepared.get("x_label") != "Q_A^-1" or prepared.get(
+                    "x_conversion"
+                ) not in {"none", "q_nm^-1_to_q_a^-1"}:
+                    raise ValueError(
+                        "标准参考曲线必须明确标记为 Q 轴（A^-1 或 nm^-1）；"
+                        "缺失、chi 或 2theta 轴语义均不允许用于 K 标定。"
+                    )
+                q_user = prepared["x"]
                 i_user = _profile_intensity(prof)
                 return get_reference_data(key, q_user=q_user, i_user=i_user)
             elif key == "Water_20C":
@@ -12228,49 +12535,117 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         # For now just update the info label (visual grouped list comes in follow-up)
         self.refresh_queue_status()
 
+    def _clear_calibration_state(self):
+        """Clear all cached K/context fields after rejected session provenance."""
+        self.calibration_context = None
+        self.calibration_k_value = None
+        self.calibration_uncertainty = None
+        self.calibration_record_path = None
+        self.calibration_record_provenance_complete = False
+        self.calibration_record_source_files_verified = False
+        global_vars = getattr(self, "global_vars", {})
+        k_var = global_vars.get("k_factor") if isinstance(global_vars, dict) else None
+        if k_var is not None:
+            try:
+                k_var.set("")
+            except Exception:
+                pass
+
+    @staticmethod
+    def _resolve_session_path(session_dir, value):
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        path = Path(text).expanduser()
+        return str((path if path.is_absolute() else Path(session_dir) / path).resolve())
+
     def apply_session(self, session_path: str):
+        session_file = Path(session_path).expanduser().resolve()
         try:
-            sess = load_session(session_path)
-        except Exception as e:
-            self.show_error("session_error_title", self.tr("session_error_body").format(err=e))
+            sess = _validate_session_payload(load_session(session_file))
+        except Exception as exc:
+            self._clear_calibration_state()
+            self.show_error(
+                "session_error_title",
+                self.tr("session_error_body").format(err=exc),
+            )
             return
 
         notes = []
-        geom = session_geometry(sess)
-        if geom:
-            px_mm = geom.get("px_mm")
-            wl_a = geom.get("wl_A")
-            dist_mm = geom.get("dist_mm")
-            self.session_geometry_fallback = {
-                "wavelength_a": float(wl_a) if wl_a is not None else None,
-                "distance_m": (float(dist_mm) / 1000.0) if dist_mm is not None else None,
-                "pixel1_m": (float(px_mm) / 1000.0) if px_mm is not None else None,
-                "pixel2_m": (float(px_mm) / 1000.0) if px_mm is not None else None,
-                "energy_kev": (HC_KEV_A / float(wl_a)) if (wl_a is not None and float(wl_a) > 0) else None,
-            }
-            notes.append("Session geometry loaded (used as consistency fallback when headers are missing).")
+        session_dir = session_file.parent
+        self.session_geometry_fallback = {}
+        try:
+            geom = session_geometry(sess)
+            if geom:
+                _validate_session_payload({"geometry": geom})
+                px_mm = geom.get("px_mm")
+                wl_a = geom.get("wl_A")
+                dist_mm = geom.get("dist_mm")
+                self.session_geometry_fallback = {
+                    "wavelength_a": float(wl_a) if wl_a is not None else None,
+                    "distance_m": (float(dist_mm) / 1000.0) if dist_mm is not None else None,
+                    "pixel1_m": (float(px_mm) / 1000.0) if px_mm is not None else None,
+                    "pixel2_m": (float(px_mm) / 1000.0) if px_mm is not None else None,
+                    "energy_kev": (HC_KEV_A / float(wl_a)) if wl_a is not None else None,
+                }
+                notes.append(
+                    "Session geometry loaded (used as consistency fallback when headers are missing)."
+                )
+        except Exception as exc:
+            self._clear_calibration_state()
+            self.show_error(
+                "session_error_title",
+                self.tr("session_error_body").format(err=exc),
+            )
+            return
 
-        # Optional calibration paths from session payload (forward-compatible)
-        cal = sess.get("calibration", {}) if isinstance(sess.get("calibration", {}), dict) else {}
-        candidate_paths = {
-            "poni": str(cal.get("poni_path", sess.get("poni_path", ""))).strip(),
-            "bg": str(cal.get("bg_path", sess.get("bg_path", ""))).strip(),
-            "dark": str(cal.get("dark_path", sess.get("dark_path", ""))).strip(),
-            "std": str(cal.get("std_path", sess.get("std_path", ""))).strip(),
+        cal = sess.get("calibration", {}) if isinstance(sess.get("calibration"), dict) else {}
+        candidate_values = {
+            "poni": cal.get("poni_path", sess.get("poni_path", "")),
+            "bg": cal.get("bg_path", sess.get("bg_path", "")),
+            "dark": cal.get("dark_path", sess.get("dark_path", "")),
+            "std": cal.get("std_path", sess.get("std_path", "")),
         }
-        if candidate_paths["poni"] and Path(candidate_paths["poni"]).is_file():
-            self.global_vars["poni_path"].set(candidate_paths["poni"])
-            notes.append(f"PONI loaded from session: {Path(candidate_paths['poni']).name}")
-        if candidate_paths["bg"] and Path(candidate_paths["bg"]).is_file():
-            self.global_vars["bg_path"].set(candidate_paths["bg"])
-            notes.append(f"Background loaded from session: {Path(candidate_paths['bg']).name}")
-        if candidate_paths["dark"] and Path(candidate_paths["dark"]).is_file():
-            self.global_vars["dark_path"].set(candidate_paths["dark"])
-            notes.append(f"Dark loaded from session: {Path(candidate_paths['dark']).name}")
-        if candidate_paths["std"] and Path(candidate_paths["std"]).is_file():
-            self.t1_files["std"].set(candidate_paths["std"])
-            self.on_load_std_t1(candidate_paths["std"])
-            notes.append(f"Std image loaded from session std_path: {Path(candidate_paths['std']).name}")
+        candidate_paths = {
+            key: self._resolve_session_path(session_dir, value)
+            for key, value in candidate_values.items()
+        }
+
+        def load_file_setting(key, variable, label, callback=None):
+            value = candidate_paths[key]
+            if not value:
+                return
+            path = Path(value)
+            if not path.is_file():
+                try:
+                    variable.set("")
+                except Exception:
+                    pass
+                notes.append(f"{label} path not found: {path}")
+                return
+            variable.set(str(path))
+            notes.append(f"{label} loaded from session: {path.name}")
+            if callback is not None:
+                try:
+                    callback(str(path))
+                except Exception as exc:
+                    notes.append(f"Session callback load failed for {label}: {exc}")
+
+        for key, variable_key, label in (
+            ("poni", "poni_path", "PONI"),
+            ("bg", "bg_path", "Background"),
+            ("dark", "dark_path", "Dark"),
+        ):
+            variable = self.global_vars.get(variable_key)
+            if variable is not None:
+                load_file_setting(key, variable, label)
+        if hasattr(self, "t1_files") and "std" in self.t1_files:
+            load_file_setting(
+                "std",
+                self.t1_files["std"],
+                "Std image",
+                callback=self.on_load_std_t1,
+            )
 
         record_value = cal.get(
             "calibration_record_path",
@@ -12278,38 +12653,35 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         )
         record_text = str(record_value or "").strip()
         if record_text:
-            record_path = Path(record_text).expanduser()
-            if not record_path.is_absolute():
-                record_path = Path(session_path).resolve().parent / record_path
+            record_path = Path(self._resolve_session_path(session_dir, record_text))
             try:
                 self.load_calibration_record(record_path)
                 notes.append(f"Complete calibration record loaded: {record_path.name}")
             except Exception as exc:
-                self.calibration_context = None
-                self.calibration_k_value = None
-                self.calibration_uncertainty = None
-                self.calibration_record_path = None
+                self._clear_calibration_state()
                 notes.append(f"Calibration record rejected: {exc}")
         elif "k_factor" in cal or "k_factor" in sess:
-            self.calibration_context = None
-            self.calibration_k_value = None
-            self.calibration_uncertainty = None
-            self.calibration_record_path = None
+            self._clear_calibration_state()
             notes.append(
                 "Legacy/manual K ignored because the session has no complete CalibrationContext record."
             )
 
-        data_path = str(sess.get("data_path", "")).strip()
-        if data_path:
-            p = Path(data_path)
-            if p.is_file() and p.suffix.lower() in (".tif", ".tiff"):
-                self.t1_files["std"].set(str(p))
-                self.on_load_std_t1(str(p))
-                notes.append(f"Std image loaded from session: {p.name}")
-            elif p.is_file():
-                notes.append(f"Session data is not TIFF, skipped for Std: {p.name}")
+        data_value = sess.get("data_path", "")
+        data_text = self._resolve_session_path(session_dir, data_value)
+        if data_text:
+            path = Path(data_text)
+            if path.is_file() and path.suffix.lower() in (".tif", ".tiff"):
+                if hasattr(self, "t1_files") and "std" in self.t1_files:
+                    self.t1_files["std"].set(str(path))
+                try:
+                    self.on_load_std_t1(str(path))
+                except Exception as exc:
+                    notes.append(f"Session callback load failed for data: {exc}")
+                notes.append(f"Std image loaded from session: {path.name}")
+            elif path.is_file():
+                notes.append(f"Session data is not TIFF, skipped for Std: {path.name}")
             else:
-                notes.append(f"Session data path not found: {data_path}")
+                notes.append(f"Session data path not found: {path}")
 
         if not notes:
             notes.append("Session loaded.")

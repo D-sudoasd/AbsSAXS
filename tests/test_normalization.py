@@ -31,6 +31,28 @@ def test_compute_norm_factor_invalid_inputs_return_nan():
     assert math.isnan(out4)
 
 
+def test_compute_norm_factor_overflow_returns_nan():
+    out = compute_norm_factor(
+        exp=1.0e308,
+        mon=1.0e308,
+        trans=1.0,
+        mode="rate",
+    )
+
+    assert math.isnan(out)
+
+
+@pytest.mark.parametrize(
+    ("exp", "mon", "trans", "mode"),
+    [
+        (1.0e-200, 1.0e-200, 1.0e-200, "rate"),
+        (None, 1.0e-200, 1.0e-200, "integrated"),
+    ],
+)
+def test_compute_norm_factor_underflow_returns_nan(exp, mon, trans, mode):
+    assert math.isnan(compute_norm_factor(exp, mon, trans, mode))
+
+
 def test_compute_norm_factor_unknown_mode_raises_before_missing_inputs():
     with pytest.raises(ValueError, match="Unknown I0 normalization mode"):
         compute_norm_factor(exp=None, mon=None, trans=None, mode="unsupported")

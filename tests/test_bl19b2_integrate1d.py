@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,7 +17,13 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _build_package(tmp_path: Path) -> tuple[Path, Path]:
+def _build_package(
+    tmp_path: Path,
+    *,
+    correct_solid_angle: bool = True,
+    polarization_factor: float | None = None,
+    signed_contract: bool = False,
+) -> tuple[Path, Path]:
     package = tmp_path / "package"
     rel = Path("problem") / "sample_00001.tif"
     edf = package / "images_edf" / rel.parent / "sample_00001_abs2d_cm-1.edf"
@@ -29,14 +36,21 @@ def _build_package(tmp_path: Path) -> tuple[Path, Path]:
     edf.write_bytes(b"stable synthetic EDF")
     np.save(mask, np.zeros((2, 2), dtype=np.uint8))
     poni.write_text("synthetic poni\n", encoding="utf-8")
+    processing_payload = {"safe_poni_checksum_sha256": _sha(poni)}
+    if signed_contract:
+        processing_payload.update(
+            {
+                "correct_solid_angle_for_k": correct_solid_angle,
+                "polarization_factor": polarization_factor,
+            }
+        )
+    processing_signature = integration._processing_signature_digest(processing_payload)
     metadata.write_text(
         json.dumps(
             {
                 "schema": "saxsabs.bl19b2_abs2d.v4",
-                "processing_signature": "2d-signature",
-                "processing_signature_payload": {
-                    "safe_poni_checksum_sha256": _sha(poni)
-                },
+                "processing_signature": processing_signature,
+                "processing_signature_payload": processing_payload,
                 "frame_signature": "2d-frame-signature",
                 "intensity_unit": "cm^-1",
                 "outputs": {"edf": str(edf), "edf_sha256": _sha(edf)},
@@ -63,8 +77,8 @@ def _build_package(tmp_path: Path) -> tuple[Path, Path]:
                     "dark": None,
                     "flat": None,
                     "normalization_factor": 1.0,
-                    "correctSolidAngle": True,
-                    "polarization_factor": None,
+                    "correctSolidAngle": correct_solid_angle,
+                    "polarization_factor": polarization_factor,
                     "do_not_repeat": [
                         "dark",
                         "background",
@@ -90,7 +104,7 @@ def _build_package(tmp_path: Path) -> tuple[Path, Path]:
                 "status": "processed",
                 "edf": edf,
                 "metadata": metadata,
-                "processing_signature": "2d-signature",
+                "processing_signature": processing_signature,
             }
         )
     return package, manifest
@@ -140,6 +154,92 @@ def test_integration_applies_only_deferred_mask_and_solid_angle_and_resumes(
     assert second["processed"] == 0
     assert second["skipped"] == 1
     assert len(calls) == 1
+
+
+def test_integration_honors_signed_2d_solid_angle_and_polarization_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    package, _manifest = _build_package(
+        tmp_path,
+        correct_solid_angle=False,
+        polarization_factor=0.95,
+        signed_contract=True,
+    )
+    calls: list[dict[str, object]] = []
+
+    class FakeIntegrator:
+        def integrate1d(self, image, npt, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                radial=np.linspace(0.001, 1.0, npt),
+                intensity=np.linspace(2.0, 3.0, npt),
+            )
+
+    monkeypatch.setattr(integration, "_load_integrator", lambda _path: FakeIntegrator())
+    monkeypatch.setattr(
+        integration,
+        "_load_validate_edf",
+        lambda _item, _metadata, _mask: np.zeros((2, 2), dtype=np.float32),
+    )
+    monkeypatch.setattr(integration, "_version", lambda _name: "test-pyfai")
+
+    result = integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(package))
+
+    assert result["processed"] == 1
+    assert calls[0]["correctSolidAngle"] is False
+    assert calls[0]["polarization_factor"] == pytest.approx(0.95)
+    signature = json.loads(
+        (package / "integration" / "config" / "run_signature.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert signature["payload"]["correctSolidAngle"] is False
+    assert signature["payload"]["polarization_factor"] == pytest.approx(0.95)
+    readme = (package / "integration" / "README.md").read_text(encoding="utf-8")
+    assert "correctSolidAngle=False" in readme
+    assert "polarization_factor=0.95" in readme
+
+
+def test_integration_relocates_package_with_relative_2d_manifest_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    package, manifest = _build_package(tmp_path, signed_contract=True)
+    metadata_path = next((package / "metadata").rglob("*.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["outputs"]["edf"] = "images_edf/problem/sample_00001_abs2d_cm-1.edf"
+    metadata["mask"]["npy"] = "masks/bl19b2_mask.npy"
+    metadata["geometry"]["poni"] = "config/geometry/geometry.poni"
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    with manifest.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    rows[0]["edf"] = "images_edf/problem/sample_00001_abs2d_cm-1.edf"
+    rows[0]["metadata"] = "metadata/problem/sample_00001_abs2d.json"
+    with manifest.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    moved = tmp_path / "moved-package"
+    shutil.copytree(package, moved)
+
+    class FakeIntegrator:
+        def integrate1d(self, image, npt, **kwargs):
+            return SimpleNamespace(
+                radial=np.linspace(0.001, 1.0, npt),
+                intensity=np.linspace(2.0, 3.0, npt),
+            )
+
+    monkeypatch.setattr(integration, "_load_integrator", lambda _path: FakeIntegrator())
+    monkeypatch.setattr(
+        integration,
+        "_load_validate_edf",
+        lambda _item, _metadata, _mask: np.zeros((2, 2), dtype=np.float32),
+    )
+    monkeypatch.setattr(integration, "_version", lambda _name: "test-pyfai")
+
+    result = integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(moved))
+
+    assert result["processed"] == 1
+    assert (moved / "integration" / "profiles" / "problem").is_dir()
 
 
 def test_integration_optional_constant_fluorescence_changes_1d_and_signature(
@@ -462,12 +562,74 @@ def test_integration_rejects_tampered_reintegration_contract(
         integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(package))
 
 
+def test_signed_null_polarization_cannot_override_recommended_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    package, _manifest = _build_package(
+        tmp_path,
+        correct_solid_angle=True,
+        polarization_factor=0.95,
+        signed_contract=True,
+    )
+    metadata_path = next((package / "metadata").rglob("*.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["recommended_reintegration"]["polarization_factor"] = None
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    monkeypatch.setattr(integration, "_load_integrator", lambda _path: object())
+
+    with pytest.raises(ValueError, match="match signed package settings"):
+        integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(package))
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["recommended_reintegration", "processing_signature_payload"],
+)
+def test_reintegration_polarization_contract_rejects_wrong_types(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+):
+    package, manifest = _build_package(
+        tmp_path,
+        correct_solid_angle=True,
+        polarization_factor=0.95,
+        signed_contract=True,
+    )
+    metadata_path = next((package / "metadata").rglob("*.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata[field]["polarization_factor"] = "0.95"
+    if field != "recommended_reintegration":
+        signature = integration._processing_signature_digest(
+            metadata["processing_signature_payload"]
+        )
+        metadata["processing_signature"] = signature
+        with manifest.open("r", newline="", encoding="utf-8") as stream:
+            reader = csv.DictReader(stream)
+            rows = list(reader)
+            fieldnames = reader.fieldnames
+        assert fieldnames is not None
+        rows[0]["processing_signature"] = signature
+        with manifest.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(
+                stream,
+                fieldnames=fieldnames,
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    monkeypatch.setattr(integration, "_load_integrator", lambda _path: object())
+
+    with pytest.raises(ValueError, match="numeric or null"):
+        integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(package))
+
+
 @pytest.mark.parametrize(
     ("field", "error_match"),
     [
         ("mask_checksum", "mask array checksum mismatch"),
         ("poni_pointer", "PONI pointer mismatch"),
-        ("poni_checksum", "PONI checksum mismatch"),
+        ("poni_checksum", "payload digest mismatch"),
     ],
 )
 def test_integration_rejects_tampered_2d_input_binding_metadata(

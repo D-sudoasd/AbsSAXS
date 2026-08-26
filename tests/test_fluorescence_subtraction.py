@@ -56,6 +56,22 @@ def test_constant_subtraction_and_error():
     assert out.f0 == pytest.approx(2.0)
 
 
+def test_fluorescence_residual_diagnostic_is_tri_state_for_too_few_points():
+    out = _sub(
+        np.array([0.01, 0.02, 0.20]),
+        np.array([12.0, 11.0, 6.0]),
+        np.full(3, 0.1),
+        method="constant",
+        f0=2.0,
+        f0_uncertainty=0.0,
+        beta=1.0,
+        beta_uncertainty=0.0,
+    )
+
+    assert out.high_q_residual_mean is None
+    assert out.high_q_check_passed is None
+
+
 def test_beta_scales_constant_and_propagates_beta_uncertainty():
     q = np.array([0.01, 0.02, 0.03])
     out = _sub(
@@ -415,3 +431,83 @@ def test_combine_sequential_adds_independent_extras():
     )
     np.testing.assert_allclose(stat, next_stat)
     np.testing.assert_allclose(comb, np.sqrt(0.1**2 + 0.2**2 + 0.3**2 + 0.4**2))
+
+
+def test_combine_sequential_rejects_broadcastable_but_unequal_shapes():
+    with pytest.raises(ValueError, match="exactly equal shapes"):
+        combine_sequential_standard_uncertainties(
+            np.ones(2),
+            np.ones(2),
+            np.ones(1),
+            np.ones(1),
+        )
+
+
+def test_combine_sequential_validates_previous_statistical_shape_without_combined():
+    with pytest.raises(ValueError, match="exactly equal shapes"):
+        combine_sequential_standard_uncertainties(
+            np.ones(2),
+            None,
+            np.ones(1),
+            np.ones(1),
+        )
+
+
+def test_combine_sequential_rejects_finite_overflow_without_warning():
+    with pytest.raises(ValueError, match="overflowed"):
+        combine_sequential_standard_uncertainties(
+            np.full(2, 1.0e200),
+            np.full(2, 2.0e200),
+            np.full(2, 1.0e200),
+            np.full(2, 2.0e200),
+        )
+
+
+def test_combine_sequential_rejects_infinite_next_combined_before_none_early_return():
+    with pytest.raises(ValueError, match="must not contain infinities"):
+        combine_sequential_standard_uncertainties(
+            np.array([1.0]),
+            None,
+            np.array([1.0]),
+            np.array([np.inf]),
+        )
+
+
+@pytest.mark.parametrize("argument", ["previous_statistical", "next_statistical"])
+def test_combine_sequential_rejects_infinite_statistical_inputs(argument):
+    kwargs = {
+        "previous_statistical": np.array([1.0]),
+        "previous_combined": None,
+        "next_statistical": np.array([1.0]),
+        "next_combined": np.array([1.0]),
+    }
+    kwargs[argument] = np.array([np.inf])
+
+    with pytest.raises(ValueError, match="must not contain infinities"):
+        combine_sequential_standard_uncertainties(**kwargs)
+
+
+def test_combine_sequential_preserves_nan_unknown_with_none_previous_combined():
+    stat, combined = combine_sequential_standard_uncertainties(
+        np.array([1.0]),
+        None,
+        np.array([1.0]),
+        np.array([np.nan]),
+    )
+
+    np.testing.assert_allclose(stat, [1.0])
+    assert np.isnan(combined[0])
+
+
+def test_fluorescence_rejects_extreme_finite_beta_as_controlled_error():
+    with pytest.raises(ValueError, match="overflowed"):
+        _sub(
+            np.array([0.01, 0.02, 0.03]),
+            np.full(3, 10.0),
+            np.zeros(3),
+            method="constant",
+            f0=1.0,
+            f0_uncertainty=0.0,
+            beta=1.0e200,
+            beta_uncertainty=0.0,
+        )

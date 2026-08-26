@@ -30,7 +30,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from saxsabs.core.intensity_state import IntensityState, assess_intensity_state
+from saxsabs.core.intensity_state import (
+    IntensityState,
+    assess_intensity_state,
+    is_cm_inv_intensity_unit,
+)
 
 
 FLOAT_PATTERN = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
@@ -240,12 +244,32 @@ def _unit_delimiters_are_balanced(text: str) -> bool:
 def q_axis_kind(name: object) -> str:
     """Classify a source X-column as Q, chi, two-theta, or unknown."""
 
-    token = _unit_token(name)
-    if "2theta" in token or "twotheta" in token:
+    text = _normalise_unit_text(name).strip()
+    if re.search(
+        r"(?<![a-z0-9])(?:2theta|two[\s_:\-]*theta)(?=$|[^a-z0-9])",
+        text,
+        flags=re.IGNORECASE,
+    ):
         return "two_theta"
-    if "chi" in token:
+    if re.search(r"(?<![a-z0-9])chi(?=$|[^a-z0-9])", text, flags=re.IGNORECASE):
         return "chi"
-    if token.startswith("q"):
+    # A leading ``q`` is not enough: quality/query/qwerty are ordinary text
+    # fields.  Accept an explicit separator, a numeric suffix (q1), or a
+    # directly bracketed unit (Q(...)); these are the unambiguous Q forms used
+    # by common 1-D exporters.
+    if re.fullmatch(r"q", text, flags=re.IGNORECASE):
+        return "q"
+    if re.fullmatch(
+        r"q(?:a|angstrom|nm)(?:\s*\^?\s*-\s*1)",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return "q"
+    if re.match(
+        r"^q(?:\s*[_:\-]\s*|\s*[([{]|\s*\d+|\s+\S+)",
+        text,
+        flags=re.IGNORECASE,
+    ):
         return "q"
     return "unknown"
 
@@ -332,6 +356,19 @@ def _error_column_preference(name: Any) -> int:
     return 2
 
 
+def _column_declares_absolute_cm_inv_header(value: object) -> bool:
+    """Return whether an I/I_abs header explicitly carries cm^-1."""
+
+    text = _normalise_unit_text(value).strip()
+    match = re.match(r"^i(?:_?abs)?(?=$|[\s_:/([{])", text)
+    if match is None:
+        return False
+    suffix = text[match.end() :].strip().strip("()[]{}").strip()
+    return is_cm_inv_intensity_unit(suffix) or bool(
+        re.fullmatch(r"/\s*cm", suffix)
+    )
+
+
 def _match_column_score(
     name: str,
     *,
@@ -348,17 +385,48 @@ def _match_column_score(
     return 0
 
 
+def _q_column_score(name: Any) -> int:
+    """Score Q-like headers without accepting arbitrary q-prefixed words."""
+
+    clean = _clean_column_name(name)
+    if clean in {"q", "chi", "radial", "2theta", "twotheta", "s", "x"}:
+        return 300
+    if q_axis_kind(name) == "q":
+        return 200
+    text = _normalise_unit_text(name).strip()
+    if re.search(r"(?:[_:\-\s])q$", text, flags=re.IGNORECASE):
+        return 150
+    if clean.startswith(("chi", "radial", "twotheta")):
+        return 200
+    return 0
+
+
 def _intensity_column_score(name: Any) -> int:
     """Score intensity headers without treating every ``i...`` name as I."""
 
+    clean = _clean_column_name(name)
     score = _match_column_score(
-        _clean_column_name(name),
-        exact={"i", "intensity", "irel", "iabs", "signal", "count", "counts", "y"},
-        prefixes=("intensity", "signal", "count", "irel", "iabs"),
+        clean,
+        exact={
+            "i",
+            "intensity",
+            "irel",
+            "iref",
+            "imeas",
+            "iabs",
+            "signal",
+            "count",
+            "counts",
+            "y",
+        },
+        prefixes=("intensity", "signal", "count", "irel"),
         suffixes=("intensity",),
     )
-    text = _normalise_unit_text(name)
-    if re.match(r"^i(?=$|[\s_:/\-([{])", text):
+    if clean.startswith("iabs") and (
+        clean == "iabs" or _column_declares_absolute_cm_inv_header(name)
+    ):
+        score = max(score, 200)
+    if _column_declares_absolute_cm_inv_header(name):
         score = max(score, 200)
     return score
 
@@ -376,7 +444,20 @@ def _pick_named_column(
     for col in cols:
         if col in used:
             continue
-        if exact == {"i", "intensity", "irel", "iabs", "signal", "count", "counts", "y"}:
+        if exact == {"q", "chi", "radial", "2theta", "twotheta", "s", "x"}:
+            score = _q_column_score(col)
+        elif exact == {
+            "i",
+            "intensity",
+            "irel",
+            "iref",
+            "imeas",
+            "iabs",
+            "signal",
+            "count",
+            "counts",
+            "y",
+        }:
             score = _intensity_column_score(col)
         else:
             score = _match_column_score(
@@ -395,12 +476,7 @@ def _comment_header_score(tokens: list[str]) -> int:
     score = 0
     for token in tokens:
         name = _clean_column_name(token)
-        score += _match_column_score(
-            name,
-            exact={"q", "chi", "radial", "2theta", "twotheta", "s", "x"},
-            prefixes=("q", "chi", "radial", "twotheta"),
-            suffixes=("q",),
-        )
+        score += _q_column_score(token)
         score += _intensity_column_score(token)
         score += _match_column_score(
             name,
@@ -527,6 +603,8 @@ def _has_malformed_unit_header_tokens(tokens: list[str]) -> bool:
         if q_axis_kind(token) != "q":
             continue
         next_token = tokens[index + 1]
+        if q_axis_kind(next_token) == "q":
+            return True
         opener = next_token[:1]
         expected = opening_to_closing.get(opener)
         if expected is None:
@@ -765,6 +843,147 @@ def extract_float(raw: Any) -> float | None:
         return None
 
 
+def _parse_semicolon_decimal_comma_token(value: str) -> float:
+    """Parse one value when semicolon is the field delimiter.
+
+    A comma inside a semicolon-delimited field can be a decimal mark or a
+    thousands separator.  We accept only decimal-comma spellings that are
+    unambiguous from the token itself; ambiguous three-digit groups fail
+    closed instead of being silently split into extra columns.
+    """
+
+    token = value.strip().strip('"')
+    if not token:
+        raise ValueError("empty value in semicolon/decimal-comma profile")
+    if token.lower() in {"nan", "+nan", "-nan"}:
+        return float("nan")
+    if token.lower() in {"inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"}:
+        raise ValueError(f"non-finite value {value!r}")
+    if "," not in token:
+        try:
+            number = float(token)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid numeric value {value!r}") from exc
+    else:
+        if "." in token or token.count(",") != 1:
+            raise ValueError(
+                f"ambiguous decimal-comma value {value!r}; use a single decimal comma"
+            )
+        match = re.fullmatch(r"[-+]?\d+,\d+", token)
+        if match is None:
+            raise ValueError(f"invalid decimal-comma value {value!r}")
+        integer, fraction = token.rsplit(",", 1)
+        # ``1,234`` is equally plausible as 1.234 or 1234.  A zero-leading
+        # decimal (0,234) is also ambiguous with a grouped value in a generic
+        # text file, so require a non-three-digit fractional width here.
+        if (
+            len(fraction) == 3
+            and len(integer.lstrip("+-")) <= 3
+            and int(integer) != 0
+        ):
+            raise ValueError(f"ambiguous decimal-comma value {value!r}")
+        number = float(f"{integer}.{fraction}")
+    if np.isinf(number):
+        raise ValueError(f"non-finite value {value!r}")
+    return number
+
+
+def _read_semicolon_decimal_comma_dataframe(path: str | Path) -> pd.DataFrame | None:
+    """Read an unambiguous semicolon/decimal-comma table, if present.
+
+    The generic pandas delimiter inference treats both delimiters as field
+    separators and can turn ``0,10;100,0`` into four columns.  This parser is
+    selected only when the data rows clearly use semicolon as the outer
+    delimiter, and validates every data value before returning.
+    """
+
+    lines = Path(path).read_text(encoding="utf-8-sig", errors="strict").splitlines()
+    meaningful: list[tuple[int, str]] = []
+    comment_header_tokens: list[str] | None = None
+    for index, line in enumerate(lines):
+        raw_stripped = line.strip()
+        if raw_stripped.startswith("#"):
+            candidate = raw_stripped.lstrip("#").strip()
+            if ";" in candidate:
+                candidate_tokens = [
+                    field.strip()
+                    for field in next(csv.reader([candidate], delimiter=";"))
+                ]
+                if (
+                    len(candidate_tokens) >= 2
+                    and _comment_header_score(candidate_tokens) > 0
+                    and any(FLOAT_PATTERN.fullmatch(token) is None for token in candidate_tokens)
+                ):
+                    comment_header_tokens = candidate_tokens
+            continue
+        stripped = _strip_inline_comment(line).strip()
+        if stripped:
+            meaningful.append((index, stripped))
+    if not meaningful:
+        return None
+
+    first_line = meaningful[0][1]
+    if ";" not in first_line:
+        return None
+    first_tokens = [
+        field.strip()
+        for field in next(csv.reader([first_line], delimiter=";"))
+    ]
+    numeric_markers = {
+        "nan", "+nan", "-nan", "inf", "+inf", "-inf",
+        "infinity", "+infinity", "-infinity",
+    }
+
+    def is_numeric_token(token: str) -> bool:
+        if token.strip().lower() in numeric_markers:
+            return True
+        try:
+            _parse_semicolon_decimal_comma_token(token)
+        except ValueError:
+            return False
+        return True
+
+    first_is_numeric = len(first_tokens) >= 2 and all(
+        is_numeric_token(token) for token in first_tokens
+    )
+    header_tokens = comment_header_tokens if first_is_numeric else first_tokens
+    data_start = 0 if first_is_numeric else 1
+    data_rows = meaningful[data_start:]
+    if not data_rows:
+        return None
+
+    # A semicolon-only table belongs to the normal parser; this special route
+    # is needed only when at least one data field contains a comma.
+    if not any("," in text for _, text in data_rows):
+        return None
+
+    parsed_rows: list[list[float]] = []
+    expected_width: int | None = None
+    for _, text in data_rows:
+        try:
+            fields = next(csv.reader([text], delimiter=";"))
+        except csv.Error as exc:
+            raise ValueError("cannot parse semicolon/decimal-comma profile") from exc
+        if expected_width is None:
+            expected_width = len(fields)
+        if len(fields) != expected_width or len(fields) < 2:
+            raise ValueError("data rows have inconsistent semicolon field widths")
+        parsed_rows.append([_parse_semicolon_decimal_comma_token(field) for field in fields])
+
+    if header_tokens is not None and len(header_tokens) != expected_width:
+        raise ValueError("header and data widths disagree in semicolon profile")
+    frame = pd.DataFrame(
+        parsed_rows,
+        columns=header_tokens if header_tokens is not None else None,
+    )
+    # Full-file assertion: the special route must never hand a partially
+    # parsed table to the heuristic column selector.
+    if frame.empty or frame.shape[1] < 2 or np.isinf(frame.to_numpy(dtype=float)).any():
+        raise ValueError("semicolon/decimal-comma profile contains invalid data")
+    frame.attrs["saxsabs_semicolon_decimal_comma"] = True
+    return frame
+
+
 def normalize_transmission(trans: float | None, raw: Any = None, key: Any = None) -> float | None:
     if trans is None:
         return None
@@ -869,7 +1088,7 @@ def read_external_1d_profile(
     if ext == ".xml":
         try:
             return read_cansas1d_xml(p)
-        except Exception as exc:
+        except (ET.ParseError, OSError, UnicodeError, ValueError) as exc:
             raise ValueError(f"Cannot parse canSAS XML file: {p.name}") from exc
     elif ext in (".h5", ".hdf5", ".hdf", ".nxs"):
         return read_nxcansas_h5(p)
@@ -877,12 +1096,22 @@ def read_external_1d_profile(
     dfs: list[pd.DataFrame] = []
     errs: list[str] = []
 
-    comment_header_df = _read_comment_header_dataframe(p)
-    has_comment_header = comment_header_df is not None
-    plain_header_tokens = _read_plain_header_tokens(p)
-    physical_data_width = _physical_data_width(p)
-    if comment_header_df is not None:
-        dfs.append(comment_header_df)
+    # Detect this grammar before any generic pandas trial: splitting both
+    # comma and semicolon would otherwise produce a plausible but wrong Q/I
+    # pair and the later heuristic cannot recover the lost decimal marks.
+    semicolon_decimal_df = _read_semicolon_decimal_comma_dataframe(p)
+    if semicolon_decimal_df is not None:
+        dfs.append(semicolon_decimal_df)
+        has_comment_header = False
+        plain_header_tokens = None
+        physical_data_width = semicolon_decimal_df.shape[1]
+    else:
+        comment_header_df = _read_comment_header_dataframe(p)
+        has_comment_header = comment_header_df is not None
+        plain_header_tokens = _read_plain_header_tokens(p)
+        physical_data_width = _physical_data_width(p)
+        if comment_header_df is not None:
+            dfs.append(comment_header_df)
 
     read_trials: list[dict[str, Any]] = [
         {"sep": None, "engine": "python", "comment": "#"},
@@ -891,7 +1120,7 @@ def read_external_1d_profile(
     ]
     malformed_header_detected = False
 
-    for kw in read_trials:
+    for kw in ([] if semicolon_decimal_df is not None else read_trials):
         try:
             df = pd.read_csv(path, encoding="utf-8-sig", **kw)
             if kw.get("header") is None and df is not None and not df.empty:
@@ -964,7 +1193,18 @@ def read_external_1d_profile(
         i_col, i_named = _pick_named_column(
             cols,
             {x_col},
-            exact={"i", "intensity", "irel", "iabs", "signal", "count", "counts", "y"},
+            exact={
+                "i",
+                "intensity",
+                "irel",
+                "iref",
+                "imeas",
+                "iabs",
+                "signal",
+                "count",
+                "counts",
+                "y",
+            },
             prefixes=("intensity", "signal", "count", "irel", "iabs", "i"),
             suffixes=("intensity",),
         )
@@ -992,6 +1232,10 @@ def read_external_1d_profile(
 
         x = pd.to_numeric(df[x_col], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
         intensity = pd.to_numeric(df[i_col], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
+        if df.attrs.get("saxsabs_semicolon_decimal_comma") and (
+            not np.all(np.isfinite(x)) or not np.all(np.isfinite(intensity))
+        ):
+            raise ValueError("semicolon/decimal-comma Q and I must be finite in every row")
         mask = np.isfinite(x) & np.isfinite(intensity)
         if int(mask.sum()) < 3:
             continue
@@ -1046,6 +1290,63 @@ def read_external_1d_profile(
 _CANSAS_NS = "urn:cansas1d:1.1"
 
 
+def _intensity_unit_semantics(value: object) -> str | None:
+    """Return a stable semantic token for an explicit intensity unit."""
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if is_cm_inv_intensity_unit(text):
+        return "cm^-1"
+    token = _unit_token(text)
+    return f"unit:{token}" if token else None
+
+
+def _validate_intensity_unit_records(
+    records: list[str],
+    *,
+    label: str,
+) -> tuple[str | None, str]:
+    """Validate per-point unit declarations and return semantic/raw units."""
+
+    present = [bool(str(value).strip()) for value in records]
+    if any(present) and not all(present):
+        raise ValueError(f"canSAS XML contains mixed/missing {label} units")
+    semantics = {_intensity_unit_semantics(value) for value in records if str(value).strip()}
+    if len(semantics) > 1:
+        raise ValueError(f"canSAS XML contains inconsistent {label} units")
+    semantic = next(iter(semantics), None)
+    raw = next((str(value).strip() for value in records if str(value).strip()), "")
+    return semantic, raw
+
+
+def _validate_i_dev_units(
+    i_semantics: str | None,
+    i_dev_records: list[str],
+    *,
+    has_i_dev: bool,
+) -> None:
+    if not has_i_dev:
+        return
+    present = [bool(str(value).strip()) for value in i_dev_records]
+    if any(present) and not all(present):
+        raise ValueError("canSAS XML contains mixed/missing Idev units")
+    if not any(present):
+        if i_semantics is not None:
+            raise ValueError("canSAS XML Idev units are missing while I has units")
+        return
+    if any(present):
+        if i_semantics is None:
+            raise ValueError("canSAS XML Idev units conflict with missing I units")
+        dev_semantics = {
+            _intensity_unit_semantics(value)
+            for value in i_dev_records
+            if str(value).strip()
+        }
+        if dev_semantics != {i_semantics}:
+            raise ValueError("canSAS XML Idev units do not match I units")
+
+
 def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
     """Read a canSAS 1D XML file and return a profile dict.
 
@@ -1066,36 +1367,70 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
     q_vals: list[float] = []
     i_vals: list[float] = []
     e_vals: list[float] = []
-    intensity_unit = ""
+    i_unit_records: list[str] = []
+    i_dev_unit_records: list[str] = []
+    has_i_dev = False
     q_unit_records: list[tuple[str, str | None]] = []
 
-    for idata in root.iter(f"{ns}Idata"):
+    idata_elements = list(root.iter(f"{ns}Idata"))
+    if not idata_elements:
+        raise ValueError(f"canSAS XML contains no Idata points: {p.name}")
+    for idata in idata_elements:
         q_el = idata.find(f"{ns}Q")
         i_el = idata.find(f"{ns}I")
         if q_el is None or i_el is None:
-            continue
+            raise ValueError(f"canSAS XML Idata point is missing Q or I: {p.name}")
         try:
-            q_value = float(q_el.text)
-            i_value = float(i_el.text)
-        except (TypeError, ValueError):
-            continue
+            q_value = float((q_el.text or "").strip())
+            i_value = float((i_el.text or "").strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"canSAS XML contains non-numeric Q or I: {p.name}") from exc
         q_vals.append(q_value)
         i_vals.append(i_value)
         raw_q_unit = str(q_el.attrib.get("unit", "") or "").strip()
         q_unit_records.append((raw_q_unit, canonicalize_q_unit(raw_q_unit)))
-        if not intensity_unit:
-            intensity_unit = str(i_el.attrib.get("unit", "") or "").strip()
+        i_unit_records.append(str(i_el.attrib.get("unit", "") or "").strip())
         e_el = idata.find(f"{ns}Idev")
-        if e_el is not None and e_el.text:
+        if e_el is not None:
+            has_i_dev = True
+            i_dev_unit_records.append(str(e_el.attrib.get("unit", "") or "").strip())
             try:
-                e_vals.append(float(e_el.text))
-            except (TypeError, ValueError):
-                e_vals.append(np.nan)
+                e_value = (
+                    np.nan
+                    if not (e_el.text or "").strip()
+                    else float((e_el.text or "").strip())
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"canSAS XML contains non-numeric Idev: {p.name}") from exc
+            e_vals.append(e_value)
         else:
             e_vals.append(np.nan)
 
     if len(q_vals) < 2:
         raise ValueError(f"canSAS XML contains too few data points: {p.name}")
+    x = np.asarray(q_vals, dtype=np.float64)
+    intensity = np.asarray(i_vals, dtype=np.float64)
+    if x.ndim != 1 or intensity.ndim != 1 or x.shape != intensity.shape:
+        raise ValueError(f"canSAS XML Q and I must be matching 1-D arrays: {p.name}")
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(intensity)):
+        raise ValueError(f"canSAS XML Q and I must contain only finite values: {p.name}")
+    err = np.asarray(e_vals, dtype=np.float64)
+    if err.shape != x.shape:
+        raise ValueError(f"canSAS XML Idev shape does not match Q/I: {p.name}")
+    if np.any(np.isinf(err)) or np.any(np.isfinite(err) & (err < 0)):
+        raise ValueError(
+            f"canSAS XML Idev must be NaN or finite and non-negative: {p.name}"
+        )
+
+    intensity_semantics, intensity_unit = _validate_intensity_unit_records(
+        i_unit_records,
+        label="I",
+    )
+    _validate_i_dev_units(
+        intensity_semantics,
+        i_dev_unit_records,
+        has_i_dev=has_i_dev,
+    )
 
     canonical_by_point = [canonical for _, canonical in q_unit_records]
     known_q_units = {unit for unit in canonical_by_point if unit is not None}
@@ -1114,10 +1449,6 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
         "",
     )
 
-    x = np.asarray(q_vals, dtype=np.float64)
-    intensity = np.asarray(i_vals, dtype=np.float64)
-    err = np.asarray(e_vals, dtype=np.float64) if e_vals else np.full_like(x, np.nan)
-
     operator_provenance: dict[str, str] = {}
     for process in root.iter(f"{ns}SASprocess"):
         for term in process.iter(f"{ns}term"):
@@ -1132,7 +1463,7 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
             "x_unit": q_unit,
             "x_unit_raw": q_unit_raw,
             "i_col": "I",
-            "err_col": "Idev",
+            "err_col": "Idev" if has_i_dev else "",
             "intensity_unit": intensity_unit,
             "operator_provenance": operator_provenance,
         },
@@ -1167,11 +1498,12 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
         i_ds = None
         e_ds = None
         intensity_unit = ""
+        i_dev_unit = ""
         q_unit: str | None = None
         q_unit_raw = ""
 
         def _find_sasdata(group: Any) -> bool:
-            nonlocal q_ds, i_ds, e_ds, intensity_unit, q_unit, q_unit_raw
+            nonlocal q_ds, i_ds, e_ds, intensity_unit, i_dev_unit, q_unit, q_unit_raw
             cls = group.attrs.get("canSAS_class", "")
             if isinstance(cls, bytes):
                 cls = cls.decode()
@@ -1192,6 +1524,12 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
                     intensity_unit = str(raw_unit or "").strip()
                     if "Idev" in group:
                         e_ds = group["Idev"][()]
+                        raw_i_dev_unit = group["Idev"].attrs.get("units", "")
+                        if isinstance(raw_i_dev_unit, bytes):
+                            raw_i_dev_unit = raw_i_dev_unit.decode(
+                                "utf-8", errors="replace"
+                            )
+                        i_dev_unit = str(raw_i_dev_unit or "").strip()
                     return True
             for key in group:
                 item = group[key]
@@ -1228,24 +1566,44 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
     if q_ds is None or i_ds is None:
         raise ValueError(f"Cannot find SASdata/Q,I datasets in {p.name}")
 
-    x = np.asarray(q_ds, dtype=np.float64).ravel()
-    intensity = np.asarray(i_ds, dtype=np.float64).ravel()
-    err = (
-        np.asarray(e_ds, dtype=np.float64).ravel()
-        if e_ds is not None
-        else np.full_like(x, np.nan)
-    )
-
+    x = np.asarray(q_ds, dtype=np.float64)
+    intensity = np.asarray(i_ds, dtype=np.float64)
+    if x.ndim != 1 or intensity.ndim != 1:
+        raise ValueError(f"NXcanSAS Q and I must be 1-D arrays in {p.name}")
     if x.shape != intensity.shape:
         raise ValueError(
             f"NXcanSAS dataset length mismatch in {p.name}: "
             f"Q has {x.size} points, I has {intensity.size}"
         )
+    if x.size < 2:
+        raise ValueError(f"NXcanSAS contains too few data points: {p.name}")
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(intensity)):
+        raise ValueError(f"NXcanSAS Q and I must contain only finite values: {p.name}")
+    err = (
+        np.asarray(e_ds, dtype=np.float64)
+        if e_ds is not None
+        else np.full_like(x, np.nan)
+    )
+
     if err.shape != x.shape:
         raise ValueError(
             f"NXcanSAS dataset length mismatch in {p.name}: "
             f"Q has {x.size} points, Idev has {err.size}"
         )
+    if np.any(np.isinf(err)) or np.any(np.isfinite(err) & (err < 0)):
+        raise ValueError(
+            f"NXcanSAS Idev must be NaN or finite and non-negative in {p.name}"
+        )
+    intensity_semantics = _intensity_unit_semantics(intensity_unit)
+    if e_ds is not None:
+        if i_dev_unit:
+            if (
+                intensity_semantics is None
+                or _intensity_unit_semantics(i_dev_unit) != intensity_semantics
+            ):
+                raise ValueError(f"NXcanSAS Idev units do not match I units in {p.name}")
+        elif intensity_semantics is not None:
+            raise ValueError(f"NXcanSAS Idev unit is missing while I has units in {p.name}")
 
     order = np.argsort(x)
     return _attach_intensity_arrays(
@@ -1287,17 +1645,24 @@ _ACQ_TIME_KEYS = [
 
 def _try_parse_datetime(value: Any) -> float | None:
     """Best-effort conversion of many date/time header formats to unix timestamp."""
+
+    def parse_numeric_epoch(number: float) -> float | None:
+        if not np.isfinite(number):
+            return None
+        # Choose the unit whose conversion lands in a plausible Unix epoch
+        # range.  Testing the converted value, rather than only the raw
+        # magnitude, distinguishes seconds, milliseconds, microseconds and
+        # nanoseconds for both native numerics and numeric strings.
+        for scale in (1.0, 1.0e3, 1.0e6, 1.0e9):
+            seconds = number / scale
+            if 1.0e9 <= seconds <= 5.0e9:
+                return seconds
+        return None
+
     if value is None:
         return None
     if isinstance(value, (int, float, np.number)):
-        v = float(value)
-        # Heuristic: if it looks like seconds since epoch (2001-01-01 .. 2100)
-        if 1e9 < v < 4e9:
-            return v
-        # If it looks like milliseconds
-        if 1e12 < v < 4e15:
-            return v / 1000.0
-        return None
+        return parse_numeric_epoch(float(value))
 
     s = str(value).strip()
     if not s or s.lower() in ("none", "null", "nan"):
@@ -1305,12 +1670,10 @@ def _try_parse_datetime(value: Any) -> float | None:
 
     # Try common numeric unix cases first
     try:
-        v = float(s)
-        if 1e9 < v < 4e9:
-            return v
-        if 1e12 < v < 4e15:
-            return v / 1000.0
-    except Exception:
+        parsed = parse_numeric_epoch(float(s))
+        if parsed is not None:
+            return parsed
+    except (TypeError, ValueError):
         pass
 
     # Try python's datetime + dateutil if present

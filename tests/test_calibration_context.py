@@ -14,8 +14,8 @@ def _context(**overrides):
     values = {
         "formula_version": "v3_nist_blank",
         "monitor_mode": "rate",
-        "poni_sha256": "poni-sha",
-        "mask_sha256": "mask-sha",
+        "poni_sha256": "a" * 64,
+        "mask_sha256": "b" * 64,
         "flat_sha256": None,
         "correct_solid_angle": True,
         "polarization_factor": None,
@@ -36,9 +36,9 @@ def test_calibration_context_fingerprint_includes_standard_provenance():
     ("field", "value"),
     [
         ("monitor_mode", "integrated"),
-        ("poni_sha256", "other-poni"),
-        ("mask_sha256", "other-mask"),
-        ("flat_sha256", "flat-sha"),
+        ("poni_sha256", "c" * 64),
+        ("mask_sha256", "d" * 64),
+        ("flat_sha256", "e" * 64),
         ("correct_solid_angle", False),
         ("polarization_factor", 0.95),
     ],
@@ -192,6 +192,103 @@ def test_calibration_context_from_dict_rejects_alias_with_wrong_srm3600_thicknes
     payload["standard_thickness_cm"] = 0.1
 
     with pytest.raises(ValueError, match="SRM 3600.*0.1055"):
+        CalibrationContext.from_dict(payload)
+
+
+def test_calibration_context_canonicalizes_trimmed_uppercase_sha256_fields():
+    context = _context(
+        poni_sha256=" " + "A" * 64 + " ",
+        mask_sha256=" " + "B" * 64 + " ",
+        standard_data_sha256=" " + "C" * 64 + " ",
+        background_data_sha256=(" " + "D" * 64 + " ",),
+    )
+
+    assert context.poni_sha256 == "a" * 64
+    assert context.mask_sha256 == "b" * 64
+    assert context.standard_data_sha256 == "c" * 64
+    assert context.background_data_sha256 == ("d" * 64,)
+    assert CalibrationContext.from_dict(context.to_dict()) == context
+
+
+@pytest.mark.parametrize("field", ["poni_sha256", "mask_sha256", "flat_sha256"])
+def test_calibration_context_rejects_malformed_sha256_fields(field):
+    with pytest.raises(ValueError, match=field):
+        _context(**{field: "not-a-digest"})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("background_data_sha256", (None,)),
+        ("background_data_sha256", ("",)),
+        ("background_data_sha256", ("not-a-digest",)),
+        ("dark_data_sha256", (None,)),
+        ("dark_data_sha256", ("",)),
+        ("dark_data_sha256", ("not-a-digest",)),
+    ],
+)
+def test_calibration_context_rejects_invalid_hash_sequence_entries(field, value):
+    with pytest.raises(ValueError, match=field):
+        _context(**{field: value})
+
+
+@pytest.mark.parametrize("field", ["background_data_sha256", "dark_data_sha256"])
+def test_calibration_context_rejects_none_hash_sequence(field):
+    with pytest.raises(ValueError, match=field):
+        _context(**{field: None})
+
+
+@pytest.mark.parametrize("field", ["background_data_sha256", "dark_data_sha256"])
+def test_calibration_context_rejects_scalar_hash_sequence(field):
+    with pytest.raises(ValueError, match=field):
+        _context(**{field: ""})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"b" * 64: "tampered"},
+        {"b" * 64},
+        frozenset({"b" * 64}),
+    ],
+)
+def test_calibration_context_rejects_unordered_hash_sequences(value):
+    with pytest.raises(ValueError, match="ordered list or tuple"):
+        _context(background_data_sha256=value)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("background_data_sha256", {"b" * 64: "tampered"}),
+        ("dark_data_sha256", {"c" * 64}),
+        ("background_monitors", {900.0: "tampered"}),
+        ("background_transmissions", {0.91}),
+        ("background_exposure_s", {10.0: "tampered"}),
+        ("dark_exposure_s", frozenset({10.0})),
+        ("q_window", {"qmin": 0.01, "qmax": 0.2}),
+    ],
+)
+def test_calibration_context_rejects_unordered_provenance_sequences(field, value):
+    with pytest.raises(ValueError, match="ordered list or tuple"):
+        _context(**{field: value})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("background_data_sha256", {"b" * 64: "tampered"}),
+        ("background_monitors", {900.0: "tampered"}),
+        ("q_window", {"qmin": 0.01, "qmax": 0.2}),
+    ],
+)
+def test_calibration_context_from_dict_rejects_unordered_provenance_sequences(
+    field, value
+):
+    payload = _context().to_dict()
+    payload[field] = value
+
+    with pytest.raises(ValueError, match="ordered list or tuple"):
         CalibrationContext.from_dict(payload)
 
 

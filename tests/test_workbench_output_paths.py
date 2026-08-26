@@ -16,7 +16,7 @@ def _labeled_export_context():
     return CalibrationContext(
         formula_version="v3_nist_blank",
         monitor_mode="rate",
-        poni_sha256="poni-sha",
+        poni_sha256="0" * 64,
         mask_sha256=None,
         flat_sha256=None,
         correct_solid_angle=True,

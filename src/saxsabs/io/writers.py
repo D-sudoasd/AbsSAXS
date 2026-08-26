@@ -8,6 +8,8 @@ Supported output formats:
 
 from __future__ import annotations
 
+import os
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -109,10 +111,14 @@ def _prepare_profile_arrays(
     i_abs: np.ndarray,
     err: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
-    q_arr = np.asarray(q, dtype=np.float64).ravel()
-    i_arr = np.asarray(i_abs, dtype=np.float64).ravel()
+    q_arr = np.asarray(q, dtype=np.float64)
+    i_arr = np.asarray(i_abs, dtype=np.float64)
+    if q_arr.ndim != 1 or i_arr.ndim != 1:
+        raise ValueError("q and intensity must be 1-D arrays")
     if q_arr.shape != i_arr.shape:
         raise ValueError("q and intensity must have the same shape")
+    if q_arr.size == 0:
+        raise ValueError("q and intensity must not be empty")
     if not np.all(np.isfinite(q_arr)):
         raise ValueError("q must contain only finite values")
     if not np.all(np.isfinite(i_arr)):
@@ -120,9 +126,15 @@ def _prepare_profile_arrays(
 
     e_arr = None
     if err is not None:
-        e_arr = np.asarray(err, dtype=np.float64).ravel()
+        e_arr = np.asarray(err, dtype=np.float64)
+        if e_arr.ndim != 1:
+            raise ValueError("uncertainty must be a 1-D array")
         if e_arr.shape != q_arr.shape:
             raise ValueError("q and uncertainty must have the same shape")
+        if np.any(np.isinf(e_arr)):
+            raise ValueError("uncertainty must not contain infinite values")
+        if np.any(np.isfinite(e_arr) & (e_arr < 0)):
+            raise ValueError("uncertainty must be non-negative or NaN")
 
     return q_arr, i_arr, e_arr
 
@@ -263,60 +275,80 @@ def write_nxcansas_h5(
     out.parent.mkdir(parents=True, exist_ok=True)
     q_arr, i_arr, e_arr = _prepare_profile_arrays(q, i_abs, err)
 
-    with h5py.File(str(out), "w") as f:
-        entry = f.create_group("sasentry01")
-        entry.attrs["NX_class"] = "NXentry"
-        entry.attrs["canSAS_class"] = "SASentry"
-        entry.attrs["version"] = "1.1"
-        entry["definition"] = "NXcanSAS"
-        entry["title"] = meta.get("title", "SAXS profile")
-        entry["run"] = meta.get("run", "001")
+    # h5py creates/truncates its target before validating every metadata
+    # assignment.  Build beside the destination and replace only after the
+    # complete file has closed successfully, so a failed write cannot destroy
+    # a previously valid result.
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{out.name}.", suffix=".tmp", dir=str(out.parent)
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    committed = False
+    try:
+        with h5py.File(str(temporary), "w") as f:
+            entry = f.create_group("sasentry01")
+            entry.attrs["NX_class"] = "NXentry"
+            entry.attrs["canSAS_class"] = "SASentry"
+            entry.attrs["version"] = "1.1"
+            entry["definition"] = "NXcanSAS"
+            entry["title"] = meta.get("title", "SAXS profile")
+            entry["run"] = meta.get("run", "001")
 
-        # SASdata
-        data = entry.create_group("sasdata01")
-        data.attrs["NX_class"] = "NXdata"
-        data.attrs["canSAS_class"] = "SASdata"
-        data.attrs["signal"] = "I"
-        data.attrs["I_axes"] = "Q"
-        data.attrs["Q_indices"] = 0
+            # SASdata
+            data = entry.create_group("sasdata01")
+            data.attrs["NX_class"] = "NXdata"
+            data.attrs["canSAS_class"] = "SASdata"
+            data.attrs["signal"] = "I"
+            data.attrs["I_axes"] = "Q"
+            data.attrs["Q_indices"] = 0
 
-        ds_q = data.create_dataset("Q", data=q_arr)
-        ds_q.attrs["units"] = "1/angstrom"
+            ds_q = data.create_dataset("Q", data=q_arr)
+            ds_q.attrs["units"] = "1/angstrom"
 
-        ds_i = data.create_dataset("I", data=i_arr)
-        ds_i.attrs["units"] = intensity_unit
+            ds_i = data.create_dataset("I", data=i_arr)
+            ds_i.attrs["units"] = intensity_unit
 
-        if e_arr is not None:
-            ds_e = data.create_dataset("Idev", data=e_arr)
-            ds_e.attrs["units"] = intensity_unit
+            if e_arr is not None:
+                ds_e = data.create_dataset("Idev", data=e_arr)
+                ds_e.attrs["units"] = intensity_unit
 
-        # SASinstrument (minimal)
-        inst = entry.create_group("sasinstrument01")
-        inst.attrs["NX_class"] = "NXinstrument"
-        inst.attrs["canSAS_class"] = "SASinstrument"
-        if meta.get("instrument_name"):
-            inst["name"] = meta["instrument_name"]
+            # SASinstrument (minimal)
+            inst = entry.create_group("sasinstrument01")
+            inst.attrs["NX_class"] = "NXinstrument"
+            inst.attrs["canSAS_class"] = "SASinstrument"
+            if meta.get("instrument_name"):
+                inst["name"] = meta["instrument_name"]
 
-        src = inst.create_group("source01")
-        src.attrs["NX_class"] = "NXsource"
-        src["radiation"] = "x-ray"
-        if "wavelength_A" in meta:
-            ds_wl = src.create_dataset(
-                "incident_wavelength", data=meta["wavelength_A"]
-            )
-            ds_wl.attrs["units"] = "angstrom"
+            src = inst.create_group("source01")
+            src.attrs["NX_class"] = "NXsource"
+            src["radiation"] = "x-ray"
+            if "wavelength_A" in meta:
+                ds_wl = src.create_dataset(
+                    "incident_wavelength", data=meta["wavelength_A"]
+                )
+                ds_wl.attrs["units"] = "angstrom"
 
-        # SASprocess
-        process = entry.create_group("sasprocess01")
-        process.attrs["NX_class"] = "NXprocess"
-        process.attrs["canSAS_class"] = "SASprocess"
-        process["name"] = meta.get("process_name", "SAXSAbs absolute calibration")
-        for key, value in _operator_provenance_from_metadata(meta).items():
-            process[key] = value
-        # SASsample
-        sample = entry.create_group("sassample01")
-        sample.attrs["NX_class"] = "NXsample"
-        sample.attrs["canSAS_class"] = "SASsample"
-        sample["name"] = meta.get("sample_name", "unknown")
+            # SASprocess
+            process = entry.create_group("sasprocess01")
+            process.attrs["NX_class"] = "NXprocess"
+            process.attrs["canSAS_class"] = "SASprocess"
+            process["name"] = meta.get("process_name", "SAXSAbs absolute calibration")
+            for key, value in _operator_provenance_from_metadata(meta).items():
+                process[key] = value
+            # SASsample
+            sample = entry.create_group("sassample01")
+            sample.attrs["NX_class"] = "NXsample"
+            sample.attrs["canSAS_class"] = "SASsample"
+            sample["name"] = meta.get("sample_name", "unknown")
+
+        os.replace(str(temporary), str(out))
+        committed = True
+    finally:
+        if not committed:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
 
     return out

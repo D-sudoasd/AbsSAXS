@@ -248,6 +248,23 @@ def test_subtract_buffer_preserves_legacy_positional_high_q_window():
     assert result.high_q_residual_mean == pytest.approx(2.0)
 
 
+def test_subtract_buffer_marks_undefined_high_q_diagnostic_as_none():
+    q = np.array([0.10, 0.20, 0.30])
+    result = _sub(
+        q,
+        np.full(3, 5.0),
+        np.full(3, 0.1),
+        q,
+        np.full(3, 2.0),
+        np.full(3, 0.1),
+        high_q_diag=(0.09, 0.21),
+        alpha_uncertainty=0.0,
+    )
+
+    assert result.high_q_residual_mean is None
+    assert result.high_q_check_passed is None
+
+
 @pytest.mark.parametrize("field", ["err_sample", "err_buffer"])
 def test_subtract_buffer_rejects_infinite_uncertainty(field):
     q = np.array([0.01, 0.02, 0.03], dtype=float)
@@ -263,6 +280,39 @@ def test_subtract_buffer_rejects_infinite_uncertainty(field):
 
     with pytest.raises(ValueError, match=field):
         _sub(**kwargs)
+
+
+@pytest.mark.parametrize("field", ["err_sample", "err_buffer"])
+def test_subtract_buffer_rejects_finite_uncertainty_overflow(field):
+    q = np.array([0.01, 0.02, 0.03], dtype=float)
+    kwargs = {
+        "q_sample": q,
+        "i_sample": np.ones(3),
+        "err_sample": np.full(3, 1.0e200),
+        "q_buffer": q,
+        "i_buffer": np.ones(3),
+        "err_buffer": np.full(3, 1.0e200),
+        "alpha_uncertainty": 0.0,
+    }
+
+    kwargs[field] = np.full(3, 1.0e200)
+    with pytest.raises(ValueError, match="overflowed"):
+        _sub(**kwargs)
+
+
+def test_subtract_buffer_rejects_extreme_finite_alpha_as_controlled_error():
+    q = np.array([0.01, 0.02, 0.03], dtype=float)
+    with pytest.raises(ValueError, match="overflowed"):
+        _sub(
+            q,
+            np.ones(3),
+            np.zeros(3),
+            q,
+            np.ones(3),
+            np.zeros(3),
+            alpha=1.0e200,
+            alpha_uncertainty=0.0,
+        )
 
 
 def test_subtract_buffer_refuses_unlabeled_profiles():

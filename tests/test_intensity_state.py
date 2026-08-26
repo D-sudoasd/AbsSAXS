@@ -30,6 +30,23 @@ def test_absolute_column_is_rejected_before_k_or_thickness_is_reapplied():
         require_relative_input_for_absolute_scaling(profile, profile_name="sample.dat")
 
 
+@pytest.mark.parametrize("column", ["I/cm", "I (1/cm)", "I (cm^-1)", "I_abs (cm^-1)"])
+def test_explicit_absolute_intensity_headers_are_semantic_and_machine_readable(column):
+    assessment = assess_intensity_state({"i_col": column})
+
+    assert assessment.state is IntensityState.ABSOLUTE_CM_INV
+
+
+@pytest.mark.parametrize(
+    "column",
+    ["imagecm1", "indexcm1", "I_absorbance", "iabsorption", "iabsent"],
+)
+def test_unrelated_i_prefixed_headers_remain_ambiguous(column):
+    assessment = assess_intensity_state({"i_col": column})
+
+    assert assessment.state is IntensityState.AMBIGUOUS
+
+
 def test_unitless_absolute_metadata_is_ambiguous():
     assessment = assess_intensity_state(
         {"i_col": "I", "operator_provenance": {"intensity_state": "absolute"}}

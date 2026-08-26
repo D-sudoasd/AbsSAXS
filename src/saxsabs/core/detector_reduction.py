@@ -89,13 +89,19 @@ def normalize_detector_frame(
 
     image_exp = _positive_finite("image_exposure_s", image_exposure_s)
     dark_exp = _positive_finite("dark_exposure_s", dark_exposure_s)
-    dark_scale = image_exp / dark_exp
     norm = compute_norm_factor(image_exp, monitor, transmission, monitor_mode)
     if not math.isfinite(norm) or norm <= 0:
         raise ValueError("detector normalization factor must be finite and > 0")
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+        dark_scale = image_exp / dark_exp
+        normalized_image = (image_arr - dark_arr * dark_scale) / norm
+    if not math.isfinite(dark_scale):
+        raise ValueError("detector dark scale must be finite")
+    if not np.all(np.isfinite(normalized_image)):
+        raise ValueError("normalized detector image contains non-finite values")
 
     return NormalizedDetectorFrame(
-        image=(image_arr - dark_arr * dark_scale) / norm,
+        image=normalized_image,
         normalization_factor=float(norm),
         dark_scale=float(dark_scale),
     )
@@ -140,8 +146,12 @@ def build_nist_net_image(
         transmission=1.0,
         monitor_mode=monitor_mode,
     )
+    with np.errstate(over="ignore", invalid="ignore"):
+        net_image = sample_frame.image - alpha_value * background_frame.image
+    if not np.all(np.isfinite(net_image)):
+        raise ValueError("net detector image contains non-finite values")
     return NetDetectorImage(
-        image=sample_frame.image - alpha_value * background_frame.image,
+        image=net_image,
         norm_sample=sample_frame.normalization_factor,
         norm_background=background_frame.normalization_factor,
         dark_scale_sample=sample_frame.dark_scale,
