@@ -9,7 +9,9 @@ from saxsabs.io.parsers import (
     infer_q_unit_from_column,
     normalize_transmission,
     parse_header_values,
+    q_axis_kind,
     read_external_1d_profile,
+    _try_parse_datetime,
 )
 
 
@@ -166,6 +168,171 @@ def test_read_external_1d_profile_csv(tmp_path: Path):
     assert out["i_col"].lower() == "intensity"
     assert np.isclose(out["intensity"][0], 100.0)
     assert "i_rel" not in out
+
+
+def test_read_external_1d_profile_supports_unambiguous_semicolon_decimal_comma(
+    tmp_path: Path,
+):
+    profile = tmp_path / "decimal-comma.dat"
+    profile.write_text(
+        "Q;I\n"
+        "0,10;100,0\n"
+        "0,20;90,0\n"
+        "0,30;80,0\n",
+        encoding="utf-8",
+    )
+
+    result = read_external_1d_profile(profile)
+
+    np.testing.assert_allclose(result["x"], [0.10, 0.20, 0.30])
+    np.testing.assert_allclose(result["intensity"], [100.0, 90.0, 80.0])
+
+
+def test_decimal_comma_zero_leading_three_digit_fraction_is_not_thousands_grouping(
+    tmp_path: Path,
+):
+    profile = tmp_path / "decimal-comma-zero-leading.dat"
+    profile.write_text(
+        "Q;I\n"
+        "0,100;-0,100\n"
+        "0,200;0,200\n"
+        "0,300;0,300\n",
+        encoding="utf-8",
+    )
+
+    result = read_external_1d_profile(profile)
+
+    np.testing.assert_allclose(result["x"], [0.1, 0.2, 0.3])
+    np.testing.assert_allclose(result["intensity"], [-0.1, 0.2, 0.3])
+
+
+def test_read_external_1d_profile_supports_comment_semicolon_decimal_comma_header(
+    tmp_path: Path,
+):
+    profile = tmp_path / "comment-decimal-comma.dat"
+    profile.write_text(
+        "# Q;I\n"
+        "0,10;100,0\n"
+        "0,20;90,0\n"
+        "0,30;80,0\n",
+        encoding="utf-8",
+    )
+
+    result = read_external_1d_profile(profile)
+
+    assert result["x_col"] == "Q"
+    assert result["i_col"] == "I"
+
+
+@pytest.mark.parametrize("column", ["I/cm", "I (1/cm)", "I (cm^-1)", "I_abs (cm^-1)"])
+def test_explicit_absolute_intensity_headers_expose_i_abs(tmp_path: Path, column: str):
+    profile = tmp_path / "absolute-header.csv"
+    profile.write_text(
+        f"Q,{column}\n0.1,100\n0.2,90\n0.3,80\n",
+        encoding="utf-8",
+    )
+
+    result = read_external_1d_profile(profile)
+
+    assert result["intensity_state"] == "absolute_cm^-1"
+    np.testing.assert_allclose(result["i_abs"], [100.0, 90.0, 80.0])
+
+
+@pytest.mark.parametrize("column", ["I_ref", "I_meas"])
+def test_external_profile_accepts_exact_reference_or_measured_intensity_header(
+    tmp_path: Path, column: str
+):
+    profile = tmp_path / "semantic-intensity-header.csv"
+    profile.write_text(
+        f"q_ref,{column}\n0.1,100\n0.2,90\n0.3,80\n",
+        encoding="utf-8",
+    )
+
+    result = read_external_1d_profile(profile)
+
+    assert result["i_col"] == column
+    np.testing.assert_allclose(result["intensity"], [100.0, 90.0, 80.0])
+
+
+@pytest.mark.parametrize(
+    "column",
+    ["imagecm1", "indexcm1", "I_absorbance", "iabsorption", "iabsent"],
+)
+def test_external_profile_rejects_unrelated_i_prefixed_header(tmp_path: Path, column: str):
+    profile = tmp_path / "false-intensity-header.csv"
+    profile.write_text(
+        f"Q,{column}\n0.1,100\n0.2,90\n0.3,80\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="numeric columns"):
+        read_external_1d_profile(profile)
+
+
+def test_read_external_1d_profile_rejects_ambiguous_semicolon_comma_values(
+    tmp_path: Path,
+):
+    profile = tmp_path / "ambiguous-comma.dat"
+    profile.write_text(
+        "Q;I\n"
+        "1,234;5,678\n"
+        "2,345;6,789\n"
+        "3,456;7,890\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="ambiguous decimal-comma"):
+        read_external_1d_profile(profile)
+
+
+def test_read_external_1d_profile_keeps_nan_uncertainty_in_decimal_comma_table(
+    tmp_path: Path,
+):
+    profile = tmp_path / "decimal-comma-error.dat"
+    profile.write_text(
+        "Q;I;Error\n"
+        "0,10;100,0;1,0\n"
+        "0,20;90,0;NaN\n"
+        "0,30;80,0;1,0\n",
+        encoding="utf-8",
+    )
+
+    result = read_external_1d_profile(profile)
+
+    assert np.isnan(result["uncertainty"][1])
+
+
+@pytest.mark.parametrize("name", ["quality", "query", "qwerty"])
+def test_q_axis_kind_does_not_classify_q_prefixed_words_as_q(name):
+    assert q_axis_kind(name) == "unknown"
+
+
+@pytest.mark.parametrize("name", ["machine", "mychi", "not2theta"])
+def test_q_axis_kind_requires_chi_and_two_theta_token_boundaries(name):
+    assert q_axis_kind(name) == "unknown"
+
+
+@pytest.mark.parametrize("name", ["q", "q_ref", "Q_A^-1", "Q(nm^-1)", "q1"])
+def test_q_axis_kind_accepts_unambiguous_q_forms(name):
+    assert q_axis_kind(name) == "q"
+
+
+def test_q_axis_kind_accepts_compact_angstrom_inverse_header():
+    assert q_axis_kind("qA^-1") == "q"
+    assert infer_q_unit_from_column("qA^-1") == "A^-1"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (1_700_000_000, 1_700_000_000.0),
+        (1_700_000_000_000, 1_700_000_000.0),
+        (1_700_000_000_000_000, 1_700_000_000.0),
+        ("1700000000000000000", 1_700_000_000.0),
+    ],
+)
+def test_try_parse_datetime_distinguishes_epoch_units(value, expected):
+    assert _try_parse_datetime(value) == pytest.approx(expected)
 
 
 def test_read_external_1d_profile_space_delimited(tmp_path: Path):

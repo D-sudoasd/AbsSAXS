@@ -25,6 +25,22 @@ def test_estimate_k_factor_robust_basic():
     assert out.points_used >= 3
 
 
+def test_estimate_k_factor_rejects_interpolation_across_nonpositive_source_point():
+    q_meas = np.array([0.01, 0.03, 0.05])
+    i_meas = np.array([1.0, -0.1, 1.0])
+    q_ref = np.array([0.01, 0.02, 0.03, 0.04, 0.05])
+    i_ref = np.ones_like(q_ref)
+
+    with pytest.raises(ValueError, match="signal too weak|valid ratio"):
+        estimate_k_factor_robust(
+            q_meas,
+            i_meas,
+            q_ref=q_ref,
+            i_ref=i_ref,
+            q_window=(0.01, 0.05),
+        )
+
+
 def test_default_nist_calibration_reports_certificate_aware_k_uncertainty():
     true_k = 2.5
     q = NIST_SRM3600_DATA[:, 0]

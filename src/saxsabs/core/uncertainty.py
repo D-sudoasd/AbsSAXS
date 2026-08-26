@@ -110,7 +110,11 @@ def propagate_absolute_uncertainty(
         )
         if np.any(np.isnan(relative)):
             unknown.append(name)
-        return magnitude * relative
+        with np.errstate(over="ignore", invalid="ignore"):
+            component = magnitude * relative
+        if np.any(np.isinf(component)):
+            raise ValueError(f"{name} uncertainty propagation overflowed")
+        return component
 
     statistical = absolute_component("statistical", statistical_standard_uncertainty)
     k_component = relative_component("k", k_relative_standard_uncertainty)
@@ -145,7 +149,10 @@ def propagate_absolute_uncertainty(
                 ) from exc
             if not np.all(np.isfinite(buffer_arr)):
                 raise ValueError("buffer_intensity must contain only finite values")
-            alpha = np.abs(buffer_arr) * alpha_u
+            with np.errstate(over="ignore", invalid="ignore"):
+                alpha = np.abs(buffer_arr) * alpha_u
+            if np.any(np.isinf(alpha)):
+                raise ValueError("alpha uncertainty propagation overflowed")
         else:
             alpha = alpha_u.copy()
 
@@ -159,7 +166,20 @@ def propagate_absolute_uncertainty(
         mu,
         alpha,
     )
-    combined = np.sqrt(np.sum([np.square(component) for component in components], axis=0))
+    component_squares: list[np.ndarray] = []
+    for component in components:
+        with np.errstate(over="ignore", invalid="ignore"):
+            squared = np.square(component)
+        if np.any(np.isinf(squared)):
+            raise ValueError("combined standard uncertainty propagation overflowed")
+        component_squares.append(squared)
+    with np.errstate(over="ignore", invalid="ignore"):
+        combined = np.sqrt(np.sum(component_squares, axis=0))
+        known_square_sum = np.nansum(component_squares, axis=0)
+    if np.any(np.isinf(known_square_sum)):
+        raise ValueError("combined standard uncertainty propagation overflowed")
+    if np.any(np.isinf(combined)):
+        raise ValueError("combined standard uncertainty propagation overflowed")
 
     if coverage_factor is None:
         expanded = np.full(shape, np.nan, dtype=np.float64)
@@ -167,7 +187,15 @@ def propagate_absolute_uncertainty(
         coverage_factor = float(coverage_factor)
         if not np.isfinite(coverage_factor) or coverage_factor <= 0:
             raise ValueError("coverage_factor must be finite and > 0")
-        expanded = combined * coverage_factor
+        for component in components:
+            with np.errstate(over="ignore", invalid="ignore"):
+                expanded_component = component * coverage_factor
+            if np.any(np.isinf(expanded_component)):
+                raise ValueError("expanded uncertainty propagation overflowed")
+        with np.errstate(over="ignore", invalid="ignore"):
+            expanded = combined * coverage_factor
+        if np.any(np.isinf(expanded)):
+            raise ValueError("expanded uncertainty propagation overflowed")
 
     status = (
         "complete"

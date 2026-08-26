@@ -80,7 +80,9 @@ def compute_norm_factor(exp: float | None, mon: float | None, trans: float | Non
             return math.nan
         if not math.isfinite(exp_v) or exp_v <= 0:
             return math.nan
-        return exp_v * mon_v * trans_v
+        product = exp_v * mon_v * trans_v
+        return product if math.isfinite(product) and product > 0 else math.nan
 
     if mode_n == "integrated":
-        return mon_v * trans_v
+        product = mon_v * trans_v
+        return product if math.isfinite(product) and product > 0 else math.nan

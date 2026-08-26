@@ -34,6 +34,48 @@ def is_cm_inv_intensity_unit(value: object) -> bool:
     return _normalized_token(value) in CM_INV_UNIT_TOKENS
 
 
+def _column_declares_absolute_cm_inv(value: object) -> bool:
+    """Recognize only explicit ``I`` columns carrying a reciprocal-cm unit.
+
+    Column names are not units by themselves.  In particular, names such as
+    ``image``/``index`` must not become absolute just because they begin with
+    the letter ``I``.  The base field is therefore restricted to ``I`` or
+    ``I_abs`` and the suffix must explicitly contain either ``1/cm``, ``/cm``
+    or a ``cm^-1`` spelling.
+    """
+
+    text = str(value or "").strip().lower().translate(
+        str.maketrans({"⁻": "-", "−": "-", "–": "-", "—": "-"})
+    )
+    match = re.match(r"^i(?:_?abs)?(?=$|[\s_:/([{])", text)
+    if match is None:
+        return False
+    suffix = text[match.end() :]
+    stripped_suffix = suffix.strip().strip("()[]{}").strip()
+    if is_cm_inv_intensity_unit(stripped_suffix):
+        return True
+    if re.fullmatch(r"/\s*cm", stripped_suffix):
+        return True
+    return False
+
+
+def _column_declares_absolute_intensity(value: object) -> bool:
+    """Recognize explicit absolute-intensity naming without prefix guessing."""
+
+    text = str(value or "").strip()
+    normalized = _normalized_token(text)
+    if normalized == "iabs":
+        return True
+    if _column_declares_absolute_cm_inv(text):
+        return True
+    return normalized in {
+        "absolute",
+        "absoluteintensity",
+        "absolutecm1",
+        "absolute1cm",
+    }
+
+
 KNOWN_CORRECTIONS = frozenset(
     {
         "dark",
@@ -226,10 +268,11 @@ def assess_intensity_state(profile: Mapping[str, object]) -> IntensityStateAsses
         evidence.append("conflicting_correction_ledgers")
 
     semantic_states: set[IntensityState] = set()
-    i_col = _normalized_token(profile.get("i_col", ""))
-    if i_col.startswith("iabs") or "absolut" in i_col or "cm1" in i_col:
+    raw_i_col = profile.get("i_col", "")
+    i_col = _normalized_token(raw_i_col)
+    if _column_declares_absolute_intensity(raw_i_col):
         semantic_states.add(IntensityState.ABSOLUTE_CM_INV)
-        evidence.append(f"column:{profile.get('i_col')}")
+        evidence.append(f"column:{raw_i_col}")
     elif i_col.startswith("irel") or "relative" in i_col:
         semantic_states.add(IntensityState.RELATIVE)
         evidence.append(f"column:{profile.get('i_col')}")

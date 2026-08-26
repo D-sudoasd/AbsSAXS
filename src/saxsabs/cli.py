@@ -46,14 +46,19 @@ def _die(message: str) -> None:
     raise SystemExit(1)
 
 
+_EXPECTED_INPUT_ERRORS = (OSError, UnicodeError, ValueError, TypeError, ImportError)
+
+
 def _clean_column_name(name: object) -> str:
     return "".join(ch for ch in str(name).strip().lower() if ch.isalnum())
 
 
 def _column_score(name: str, role: str) -> int:
+    raw_name = str(name)
+    name = _clean_column_name(name)
     if role == "q":
         exact = {"q", "chi", "radial", "2theta", "twotheta", "s", "x"}
-        prefixes = ("q", "chi", "radial", "twotheta")
+        prefixes = ("chi", "radial", "twotheta")
         suffixes = ("q",)
     else:
         exact = {"i", "intensity", "irel", "iabs", "signal", "count", "counts", "y"}
@@ -62,6 +67,8 @@ def _column_score(name: str, role: str) -> int:
 
     if name in exact:
         return 300
+    if role == "q" and q_axis_kind(raw_name) == "q":
+        return 200
     if any(name.startswith(prefix) and len(name) > len(prefix) for prefix in prefixes):
         return 200
     if any(name.endswith(suffix) and len(name) > len(suffix) for suffix in suffixes):
@@ -133,7 +140,7 @@ def _resolve_column(
     best_col = None
     best_score = 0
     for col in columns:
-        score = _column_score(_clean_column_name(col), role)
+        score = _column_score(col, role)
         if score > best_score:
             best_col = col
             best_score = score
@@ -775,13 +782,21 @@ def main() -> None:
         return
 
     if args.command == "parse-header":
-        header = json.loads(args.header_json.read_text(encoding="utf-8"))
-        exp, mon, trans = parse_header_values(header)
+        try:
+            header = json.loads(args.header_json.read_text(encoding="utf-8-sig"))
+            if not isinstance(header, dict):
+                raise ValueError("header JSON top level must be an object")
+            exp, mon, trans = parse_header_values(header)
+        except _EXPECTED_INPUT_ERRORS as exc:
+            _die(f"parse-header failed: {exc}")
         print(json.dumps({"exp_s": exp, "i0": mon, "trans": trans}, ensure_ascii=False))
         return
 
     if args.command == "parse-external1d":
-        result = read_external_1d_profile(args.input)
+        try:
+            result = read_external_1d_profile(args.input)
+        except _EXPECTED_INPUT_ERRORS as exc:
+            _die(f"parse-external1d failed: {exc}")
         print(
             json.dumps(
                 {
@@ -846,7 +861,7 @@ def main() -> None:
                     i_ref=profile_intensity(reference),
                     q_window=(args.qmin, args.qmax),
                 )
-        except ValueError as exc:
+        except _EXPECTED_INPUT_ERRORS as exc:
             _die(f"estimate-k failed: {exc}")
         print(
             json.dumps(
@@ -890,7 +905,7 @@ def main() -> None:
                 sample_profile=sample,
                 buffer_profile=buffer_profile,
             )
-        except ValueError as exc:
+        except _EXPECTED_INPUT_ERRORS as exc:
             _die(f"subtract-buffer failed: {exc}")
         print(
             json.dumps(
@@ -942,7 +957,7 @@ def main() -> None:
                 err_fluorescence=err_fluo,
                 fluorescence_profile=fluo_profile,
             )
-        except ValueError as exc:
+        except _EXPECTED_INPUT_ERRORS as exc:
             _die(f"subtract-fluorescence failed: {exc}")
         print(
             json.dumps(

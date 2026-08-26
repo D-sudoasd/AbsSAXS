@@ -172,15 +172,101 @@ class TestCanSAS1DXML:
                 metadata=ABS_META,
             )
 
+    @pytest.mark.parametrize(
+        "q,i,err",
+        [
+            (np.array([[0.1, 0.2]]), np.array([[10.0, 9.0]]), None),
+            (np.array([]), np.array([]), None),
+            (np.array([0.1, 0.2]), np.array([10.0, 9.0]), np.array([1.0, -1.0])),
+            (np.array([0.1, 0.2]), np.array([10.0, 9.0]), np.array([1.0, np.inf])),
+        ],
+    )
+    def test_write_rejects_invalid_1d_or_uncertainty_inputs(self, tmp_path, q, i, err):
+        with pytest.raises(ValueError):
+            write_cansas1d_xml(tmp_path / "invalid-input.xml", q, i, err, metadata=ABS_META)
+
+    def test_reader_tracks_profile_without_i_dev(self, tmp_path):
+        q, i_abs, _ = self._make_data(4)
+        result = read_cansas1d_xml(
+            write_cansas1d_xml(tmp_path / "no-idev.xml", q, i_abs, metadata=ABS_META)
+        )
+
+        assert result["err_col"] == ""
+        assert np.all(np.isnan(result["uncertainty"]))
+
+    def test_reader_accepts_equivalent_i_units_but_rejects_missing_or_conflicting_units(
+        self, tmp_path
+    ):
+        q, i_abs, err = self._make_data(4)
+        xml_path = tmp_path / "units.xml"
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+        tree = ET.parse(xml_path)
+        namespace = "{urn:cansas1d:1.1}"
+        i_elements = list(tree.getroot().iter(f"{namespace}I"))
+        i_elements[1].set("unit", "cm^-1")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        assert read_cansas1d_xml(xml_path)["intensity_unit"] == "1/cm"
+
+        tree = ET.parse(xml_path)
+        list(tree.getroot().iter(f"{namespace}I"))[1].attrib.pop("unit")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        with pytest.raises(ValueError, match="mixed/missing I units"):
+            read_cansas1d_xml(xml_path)
+
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+        tree = ET.parse(xml_path)
+        next(tree.getroot().iter(f"{namespace}Idev")).set("unit", "1/nm")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        with pytest.raises(ValueError, match="Idev units"):
+            read_cansas1d_xml(xml_path)
+
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+        tree = ET.parse(xml_path)
+        for element in tree.getroot().iter(f"{namespace}Idev"):
+            element.attrib.pop("unit")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        with pytest.raises(ValueError, match="Idev units are missing"):
+            read_cansas1d_xml(xml_path)
+
+    @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf"])
+    def test_reader_rejects_nonfinite_xml_q_or_i(self, tmp_path, bad_value):
+        q, i_abs, _ = self._make_data(3)
+        xml_path = tmp_path / "bad-xml.xml"
+        write_cansas1d_xml(xml_path, q, i_abs, metadata=ABS_META)
+        tree = ET.parse(xml_path)
+        first_q = next(tree.getroot().iter("{urn:cansas1d:1.1}Q"))
+        first_q.text = bad_value
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        with pytest.raises(ValueError, match="finite"):
+            read_cansas1d_xml(xml_path)
+
+    @pytest.mark.parametrize("bad_value", ["inf", "-inf", "-0.1"])
+    def test_reader_rejects_invalid_xml_i_dev(self, tmp_path, bad_value):
+        q, i_abs, err = self._make_data(3)
+        xml_path = tmp_path / "bad-idev.xml"
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+        tree = ET.parse(xml_path)
+        next(tree.getroot().iter("{urn:cansas1d:1.1}Idev")).text = bad_value
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+        with pytest.raises(ValueError, match="Idev"):
+            read_cansas1d_xml(xml_path)
+
 
 # ---------------------------------------------------------------------------
-# NXcanSAS HDF5 round-trip (skip if h5py unavailable)
+# NXcanSAS HDF5 round-trip (skip only these tests if h5py is unavailable)
 # ---------------------------------------------------------------------------
-h5py = pytest.importorskip("h5py")
+try:
+    import h5py
+except ImportError:  # pragma: no cover - exercised in minimal installations
+    h5py = None
 from saxsabs.io.parsers import read_nxcansas_h5  # noqa: E402
 
 
 class TestNXcanSASHDF5:
+    @pytest.fixture(autouse=True)
+    def _require_h5py(self):
+        pytest.importorskip("h5py")
+
     def _make_data(self, n=50):
         q = np.linspace(0.01, 0.30, n)
         i_abs = 100.0 / q
@@ -306,3 +392,67 @@ class TestNXcanSASHDF5:
             assert "length mismatch" in str(exc)
         else:
             raise AssertionError("Expected ValueError for malformed NXcanSAS file")
+
+    @pytest.mark.parametrize(
+        "q,i,err",
+        [
+            (np.array([[0.1, 0.2]]), np.array([[10.0, 9.0]]), None),
+            (np.array([]), np.array([]), None),
+            (np.array([0.1, 0.2]), np.array([10.0, 9.0]), np.array([1.0, -1.0])),
+            (np.array([0.1, 0.2]), np.array([10.0, 9.0]), np.array([1.0, np.inf])),
+        ],
+    )
+    def test_write_rejects_invalid_1d_or_uncertainty_inputs(self, tmp_path, q, i, err):
+        with pytest.raises(ValueError):
+            write_nxcansas_h5(tmp_path / "invalid-input.h5", q, i, err, metadata=ABS_META)
+
+    def test_writer_is_atomic_when_metadata_assignment_fails(self, tmp_path):
+        q, i_abs, err = self._make_data(4)
+        target = tmp_path / "atomic.h5"
+        write_nxcansas_h5(target, q, i_abs, err, metadata=ABS_META)
+        original = target.read_bytes()
+
+        with pytest.raises((TypeError, ValueError)):
+            write_nxcansas_h5(
+                target,
+                q,
+                i_abs,
+                err,
+                metadata=_meta(title=None),
+            )
+
+        assert target.read_bytes() == original
+        assert not list(tmp_path.glob(f".{target.name}.*.tmp"))
+
+    @pytest.mark.parametrize("bad_value", [np.nan, np.inf, -np.inf])
+    def test_reader_rejects_nonfinite_hdf_q_or_i(self, tmp_path, bad_value):
+        path = tmp_path / "bad-values.h5"
+        with h5py.File(path, "w") as f:
+            data = f.create_group("sasdata01")
+            data.attrs["canSAS_class"] = "SASdata"
+            data.create_dataset("Q", data=np.array([0.1, bad_value, 0.3]))
+            data.create_dataset("I", data=np.array([10.0, 9.0, 8.0]))
+        with pytest.raises(ValueError, match="finite"):
+            read_nxcansas_h5(path)
+
+    def test_reader_rejects_non_1d_hdf_datasets(self, tmp_path):
+        path = tmp_path / "two-dimensional.h5"
+        with h5py.File(path, "w") as f:
+            data = f.create_group("sasdata01")
+            data.attrs["canSAS_class"] = "SASdata"
+            data.create_dataset("Q", data=np.ones((2, 2)))
+            data.create_dataset("I", data=np.ones((2, 2)))
+        with pytest.raises(ValueError, match="1-D"):
+            read_nxcansas_h5(path)
+
+    @pytest.mark.parametrize("bad_value", [np.inf, -1.0])
+    def test_reader_rejects_invalid_hdf_i_dev(self, tmp_path, bad_value):
+        path = tmp_path / "bad-idev.h5"
+        with h5py.File(path, "w") as f:
+            data = f.create_group("sasdata01")
+            data.attrs["canSAS_class"] = "SASdata"
+            data.create_dataset("Q", data=np.array([0.1, 0.2, 0.3]))
+            data.create_dataset("I", data=np.array([10.0, 9.0, 8.0]))
+            data.create_dataset("Idev", data=np.array([0.1, bad_value, 0.1]))
+        with pytest.raises(ValueError, match="Idev"):
+            read_nxcansas_h5(path)

@@ -47,8 +47,8 @@ class FluorescenceSubtractionResult:
     beta: float
     f0: float
     f_profile: np.ndarray
-    high_q_residual_mean: float = 0.0
-    high_q_check_passed: bool = True
+    high_q_residual_mean: float | None = None
+    high_q_check_passed: bool | None = None
     high_q_window: tuple[float, float] | None = None
     high_q_points: int = 0
     negative_fraction: float = 0.0
@@ -99,6 +99,16 @@ def _optional_nonnegative_uncertainty(name: str, value: float | None) -> float |
     if not np.isfinite(out) or out < 0:
         raise ValueError(f"{name} must be finite and >= 0")
     return out
+
+
+def _square_uncertainty(name: str, values: np.ndarray | float) -> np.ndarray:
+    """Square uncertainty values without exposing floating-point overflow."""
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        squared = np.square(values)
+    if np.any(np.isinf(squared)):
+        raise ValueError(f"{name} uncertainty propagation overflowed")
+    return np.asarray(squared, dtype=np.float64)
 
 
 def _validate_beta(beta: float) -> float:
@@ -180,7 +190,7 @@ def _prepare_variance_grid(
 ) -> tuple[np.ndarray, np.ndarray]:
     order = np.argsort(q_source)
     q_sorted = q_source[order]
-    variance_sorted = np.square(sigma_source[order])
+    variance_sorted = _square_uncertainty(label, sigma_source[order])
     uq, inv = np.unique(q_sorted, return_inverse=True)
     if uq.size < 2:
         raise ValueError(f"{label} q grid must contain at least 2 unique points")
@@ -191,9 +201,11 @@ def _prepare_variance_grid(
     for group in range(uq.size):
         group_variance = variance_sorted[inv == group]
         if np.all(np.isfinite(group_variance)):
-            variance_of_mean[group] = float(
-                group_variance.sum() / group_variance.size**2
-            )
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+                value = group_variance.sum() / group_variance.size**2
+            if not np.isfinite(value):
+                raise ValueError(f"{label} uncertainty propagation overflowed")
+            variance_of_mean[group] = float(value)
     return uq, variance_of_mean
 
 
@@ -264,7 +276,7 @@ def _residual_diagnostics(
     q: np.ndarray,
     i_corr: np.ndarray,
     window: tuple[float, float],
-) -> tuple[float, bool, int]:
+) -> tuple[float | None, bool | None, int]:
     mask = _window_mask(q, i_corr, window)
     n_points = int(mask.sum())
     if n_points >= 3:
@@ -272,7 +284,7 @@ def _residual_diagnostics(
         residual_std = float(np.std(i_corr[mask]))
         check_ok = abs(residual_mean) < 3.0 * max(residual_std, 1e-30)
         return residual_mean, check_ok, n_points
-    return 0.0, True, n_points
+    return None, None, n_points
 
 
 def subtract_fluorescence(
@@ -366,7 +378,10 @@ def subtract_fluorescence(
         if f0_uncertainty is None:
             f_variance = np.full_like(i_s, np.nan)
         else:
-            f_variance = np.full_like(i_s, f0_uncertainty**2)
+            f_variance = np.full_like(
+                i_s,
+                _square_uncertainty("f0", f0_uncertainty),
+            )
     elif parsed_method in {
         FluorescenceMethod.HIGH_Q_MEAN,
         FluorescenceMethod.HIGH_Q_MEDIAN,
@@ -387,7 +402,10 @@ def subtract_fluorescence(
         if f0_uncertainty is None:
             f_variance = np.full_like(i_s, np.nan)
         else:
-            f_variance = np.full_like(i_s, f0_uncertainty**2)
+            f_variance = np.full_like(
+                i_s,
+                _square_uncertainty("f0", f0_uncertainty),
+            )
     else:
         if f0 is not None:
             raise ValueError("measured_profile refuses a scalar f0")
@@ -429,28 +447,46 @@ def subtract_fluorescence(
             )
         else:
             f_profile = i_f
-            f_variance = np.square(e_f)
+            f_variance = _square_uncertainty("err_fluorescence", e_f)
         finite_f = f_profile[np.isfinite(f_profile)]
         f0_value = float(np.mean(finite_f)) if finite_f.size else float("nan")
         if not np.isfinite(f0_value) or f0_value < 0:
             raise ValueError("measured fluorescence intensity must be finite and >= 0")
         f0_uncertainty = None
 
-    subtracted_term = beta_value * f_profile
+    with np.errstate(over="ignore", invalid="ignore"):
+        subtracted_term = beta_value * f_profile
+    if np.any(np.isinf(subtracted_term)):
+        raise ValueError("fluorescence subtraction produced non-finite intensity")
     i_corr = i_s - subtracted_term
+    if np.any(np.isinf(i_corr)):
+        raise ValueError("fluorescence subtraction produced non-finite intensity")
 
-    variance_statistical = np.square(e_s) + (beta_value**2) * f_variance
+    beta_squared = _square_uncertainty("beta", beta_value)
+    sample_variance = _square_uncertainty("err_abs", e_s)
+    with np.errstate(over="ignore", invalid="ignore"):
+        variance_statistical = sample_variance + beta_squared * f_variance
+    if np.any(np.isinf(variance_statistical)):
+        raise ValueError("fluorescence uncertainty propagation overflowed")
     if parsed_method is not FluorescenceMethod.MEASURED_PROFILE and f0_uncertainty is None:
         # Unknown u(F0) is a combined-budget gap, not a missing sample error.
-        variance_statistical = np.square(e_s)
+        variance_statistical = sample_variance
     err_statistical = np.sqrt(variance_statistical)
     if beta_uncertainty is None or (
         parsed_method is not FluorescenceMethod.MEASURED_PROFILE and f0_uncertainty is None
     ):
         variance_combined = np.full_like(i_s, np.nan)
     else:
-        variance_combined = variance_statistical + np.square(f_profile * beta_uncertainty)
+        with np.errstate(over="ignore", invalid="ignore"):
+            beta_term = f_profile * beta_uncertainty
+        beta_variance = _square_uncertainty("beta", beta_term)
+        with np.errstate(over="ignore", invalid="ignore"):
+            variance_combined = variance_statistical + beta_variance
+        if np.any(np.isinf(variance_combined)):
+            raise ValueError("fluorescence uncertainty propagation overflowed")
     err_combined = np.sqrt(variance_combined)
+    if np.any(np.isinf(err_statistical)) or np.any(np.isinf(err_combined)):
+        raise ValueError("fluorescence uncertainty propagation overflowed")
 
     diag_window = residual_window
     if diag_window is None:
@@ -495,15 +531,54 @@ def combine_sequential_standard_uncertainties(
     """
     stat = np.asarray(next_statistical, dtype=np.float64)
     nxt = np.asarray(next_combined, dtype=np.float64)
+    prev_stat = np.asarray(previous_statistical, dtype=np.float64)
+    prev_comb = (
+        None
+        if previous_combined is None
+        else np.asarray(previous_combined, dtype=np.float64)
+    )
+    if (
+        stat.shape != nxt.shape
+        or prev_stat.shape != stat.shape
+        or (prev_comb is not None and prev_comb.shape != prev_stat.shape)
+    ):
+        raise ValueError("all uncertainty arrays must have exactly equal shapes")
+    supplied_arrays = (prev_stat, stat, nxt)
+    if prev_comb is not None:
+        supplied_arrays += (prev_comb,)
+    if any(np.any(np.isinf(values)) for values in supplied_arrays):
+        raise ValueError("sequential uncertainty inputs must not contain infinities")
     if previous_combined is None:
         return stat, nxt
-    prev_stat = np.asarray(previous_statistical, dtype=np.float64)
-    prev_comb = np.asarray(previous_combined, dtype=np.float64)
-    extra_prev = np.square(prev_comb) - np.square(prev_stat)
-    extra_next = np.square(nxt) - np.square(stat)
+    assert prev_comb is not None
+    with np.errstate(over="ignore", invalid="ignore"):
+        prev_comb_squared = np.square(prev_comb)
+        prev_stat_squared = np.square(prev_stat)
+        next_comb_squared = np.square(nxt)
+        next_stat_squared = np.square(stat)
+    if any(
+        np.any(np.isinf(values))
+        for values in (
+            prev_comb_squared,
+            prev_stat_squared,
+            next_comb_squared,
+            next_stat_squared,
+        )
+    ):
+        raise ValueError("sequential uncertainty propagation overflowed")
+    extra_prev = prev_comb_squared - prev_stat_squared
+    extra_next = next_comb_squared - next_stat_squared
     extra_prev = np.clip(extra_prev, 0.0, None)
     extra_next = np.clip(extra_next, 0.0, None)
-    combined = np.sqrt(np.square(stat) + extra_prev + extra_next)
-    unknown = ~np.isfinite(prev_comb) | ~np.isfinite(nxt)
+    with np.errstate(over="ignore", invalid="ignore"):
+        combined = np.sqrt(next_stat_squared + extra_prev + extra_next)
+    if np.any(np.isinf(combined)):
+        raise ValueError("sequential uncertainty propagation overflowed")
+    unknown = (
+        ~np.isfinite(prev_comb)
+        | ~np.isfinite(nxt)
+        | ~np.isfinite(prev_stat)
+        | ~np.isfinite(stat)
+    )
     combined = np.where(unknown, np.nan, combined)
     return stat, combined

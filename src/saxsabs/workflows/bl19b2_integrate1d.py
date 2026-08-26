@@ -14,7 +14,7 @@ import importlib.metadata as importlib_metadata
 import io
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -104,6 +104,13 @@ def _metadata_scientific_sha256(metadata: dict[str, Any]) -> str:
     return _canonical_hash(scientific)
 
 
+def _processing_signature_digest(payload: dict[str, Any]) -> str:
+    """Recompute the canonical BL19B2 2D processing-signature digest."""
+    if not isinstance(payload, dict):
+        raise ValueError("2D processing_signature_payload must be an object")
+    return _canonical_hash(payload)
+
+
 def _package_file(path: Path, root: Path, label: str) -> Path:
     root_resolved = root.resolve(strict=True)
     resolved = path.resolve(strict=True)
@@ -129,11 +136,24 @@ def _relative_input_path(value: str) -> Path:
     return Path(*pure.parts)
 
 
-def _resolve_manifest_output(row: dict[str, str], names: tuple[str, ...], label: str) -> Path:
+def _resolve_manifest_output(
+    row: dict[str, str],
+    names: tuple[str, ...],
+    label: str,
+    *,
+    package_root: Path | None = None,
+) -> Path:
     values = [row.get(name, "").strip() for name in names if row.get(name, "").strip()]
     if not values:
         raise ValueError(f"successful 2D manifest row is missing {label}")
-    resolved = [Path(value).resolve(strict=True) for value in values]
+    resolved = [
+        (
+            Path(value)
+            if Path(value).is_absolute() or package_root is None
+            else package_root / Path(value)
+        ).resolve(strict=True)
+        for value in values
+    ]
     if any(path != resolved[0] for path in resolved[1:]):
         raise ValueError(f"conflicting {label} columns in 2D manifest")
     return resolved[0]
@@ -177,8 +197,18 @@ def _read_manifest(config: Integrate1DConfig) -> tuple[Path, bytes, list[_InputR
         if rel_key in seen_rel:
             raise ValueError(f"duplicate relative_path in 2D manifest: {rel}")
         seen_rel.add(rel_key)
-        edf = _resolve_manifest_output(row, ("edf", "output_edf"), "EDF path")
-        metadata = _resolve_manifest_output(row, ("metadata", "output_metadata"), "metadata path")
+        edf = _resolve_manifest_output(
+            row,
+            ("edf", "output_edf"),
+            "EDF path",
+            package_root=package,
+        )
+        metadata = _resolve_manifest_output(
+            row,
+            ("metadata", "output_metadata"),
+            "metadata path",
+            package_root=package,
+        )
         expected_edf = (image_root / rel.parent / f"{rel.stem}_abs2d_cm-1.edf").resolve()
         expected_meta = (metadata_root / rel.parent / f"{rel.stem}_abs2d.json").resolve()
         if edf != expected_edf or metadata != expected_meta:
@@ -331,6 +361,114 @@ def _read_profile(path: Path, npt: int) -> tuple[np.ndarray, np.ndarray]:
     return data[:, 0], data[:, 1]
 
 
+def _resolve_package_path(value: Any, package_root: Path, *, label: str) -> Path:
+    """Resolve a generated package pointer, accepting legacy absolute paths."""
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"2D metadata is missing {label}")
+    path = Path(text)
+    resolved = (path if path.is_absolute() else package_root / path).resolve()
+    return resolved
+
+
+def _reintegration_contract(metadata: dict[str, Any], item: _InputRow) -> dict[str, Any]:
+    recommended = metadata.get("recommended_reintegration", {})
+    if not isinstance(recommended, dict):
+        raise ValueError(f"2D reintegration contract is missing for {item.relative_path}")
+    if "correctSolidAngle" not in recommended:
+        raise ValueError(
+            f"2D reintegration correctSolidAngle is missing for {item.relative_path}"
+        )
+    correct_solid_angle = recommended["correctSolidAngle"]
+    if not isinstance(correct_solid_angle, bool):
+        raise ValueError(
+            f"2D reintegration correctSolidAngle must be boolean for {item.relative_path}"
+        )
+    def _polarization_value(value: Any, label: str) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(
+            value, (int, float, np.integer, np.floating)
+        ):
+            raise ValueError(
+                f"2D reintegration {label} must be numeric or null for {item.relative_path}"
+            )
+        number = float(value)
+        if not np.isfinite(number) or number < -1.0 or number > 1.0:
+            raise ValueError(
+                f"2D reintegration {label} must be in [-1, 1] for {item.relative_path}"
+            )
+        return number
+
+    polarization = _polarization_value(
+        recommended.get("polarization_factor"), "polarization_factor"
+    )
+    deferred = metadata.get("corrections_deferred_to_integration")
+    if isinstance(deferred, dict):
+        deferred_solid = deferred.get("solid_angle")
+        if deferred_solid is not None and not isinstance(deferred_solid, bool):
+            raise ValueError(
+                f"2D reintegration solid-angle contract must be boolean for {item.relative_path}"
+            )
+        if deferred_solid is not None and deferred_solid != correct_solid_angle:
+            raise ValueError(
+                f"2D reintegration solid-angle contract is inconsistent for {item.relative_path}"
+            )
+        deferred_pol = deferred.get("polarization_factor")
+        deferred_pol = _polarization_value(deferred_pol, "polarization_factor")
+        if deferred_pol != polarization:
+            raise ValueError(
+                f"2D reintegration polarization contract is inconsistent for {item.relative_path}"
+            )
+    signed_payload = metadata.get("processing_signature_payload", {})
+    if isinstance(signed_payload, dict):
+        signed_fields = {
+            "correct_solid_angle_for_k",
+            "polarization_factor",
+        }
+        signed_fields_present = signed_fields & signed_payload.keys()
+        if signed_fields_present and signed_fields_present != signed_fields:
+            raise ValueError(
+                f"2D reintegration signed settings are incomplete for {item.relative_path}"
+            )
+        if signed_fields_present == signed_fields:
+            signed_solid = signed_payload["correct_solid_angle_for_k"]
+            if not isinstance(signed_solid, bool):
+                raise ValueError(
+                    "2D reintegration signed correct_solid_angle_for_k must be "
+                    f"boolean for {item.relative_path}"
+                )
+            signed_pol = _polarization_value(
+                signed_payload["polarization_factor"], "signed polarization_factor"
+            )
+            if signed_solid != correct_solid_angle:
+                raise ValueError(
+                    f"2D reintegration correctSolidAngle must match signed package settings "
+                    f"for {item.relative_path}"
+                )
+            if signed_pol != polarization:
+                raise ValueError(
+                    f"2D reintegration polarization_factor must match signed package settings "
+                    f"for {item.relative_path}"
+                )
+        # Legacy hand-built packages did not sign the deferred correction policy.
+        # Keep their historical true/null contract strict so a post-hoc metadata
+        # edit cannot silently change the numerical operator.
+        if not signed_fields_present:
+            if correct_solid_angle is not True:
+                raise ValueError(
+                    f"2D reintegration correctSolidAngle must be true for {item.relative_path}"
+                )
+            if polarization is not None:
+                raise ValueError(
+                    f"2D reintegration polarization_factor must be null for {item.relative_path}"
+                )
+    return {
+        "correctSolidAngle": correct_solid_angle,
+        "polarization_factor": polarization,
+    }
+
+
 def _validate_metadata(
     item: _InputRow,
     mask_path: Path,
@@ -338,7 +476,8 @@ def _validate_metadata(
     mask_checksum_sha256: str,
     poni_path: Path,
     poni_sha256: str,
-) -> tuple[dict[str, Any], str]:
+    package_root: Path,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
     raw = item.metadata.read_bytes()
     try:
         metadata = json.loads(raw.decode("utf-8"))
@@ -346,18 +485,46 @@ def _validate_metadata(
         raise ValueError(f"unreadable 2D metadata: {item.metadata}") from exc
     if metadata.get("processing_signature") != item.processing_signature:
         raise ValueError(f"2D processing signature mismatch for {item.relative_path}")
+    try:
+        recomputed_signature = _processing_signature_digest(
+            metadata.get("processing_signature_payload")
+        )
+    except ValueError as exc:
+        raise ValueError(
+            f"2D processing signature payload is invalid for {item.relative_path}"
+        ) from exc
+    if recomputed_signature != metadata.get("processing_signature"):
+        raise ValueError(
+            f"2D processing signature payload digest mismatch for {item.relative_path}"
+        )
+    if recomputed_signature != item.processing_signature:
+        raise ValueError(
+            f"2D processing signature does not match manifest for {item.relative_path}"
+        )
     if metadata.get("intensity_unit") != "cm^-1" or not metadata.get("frame_signature"):
         raise ValueError(f"2D metadata lacks absolute-intensity/frame provenance for {item.relative_path}")
-    recorded_edf = Path(str(metadata.get("outputs", {}).get("edf", ""))).resolve()
+    recorded_edf = _resolve_package_path(
+        metadata.get("outputs", {}).get("edf"),
+        package_root,
+        label="EDF output",
+    )
     if recorded_edf != item.edf:
         raise ValueError(f"2D metadata EDF pointer mismatch for {item.relative_path}")
-    recorded_mask = Path(str(metadata.get("mask", {}).get("npy", ""))).resolve()
+    recorded_mask = _resolve_package_path(
+        metadata.get("mask", {}).get("npy"),
+        package_root,
+        label="mask path",
+    )
     if recorded_mask != mask_path:
         raise ValueError(f"2D metadata mask pointer mismatch for {item.relative_path}")
     recorded_mask_checksum = str(metadata.get("mask", {}).get("checksum_sha256", ""))
     if not recorded_mask_checksum or recorded_mask_checksum != mask_checksum_sha256:
         raise ValueError(f"2D metadata mask array checksum mismatch for {item.relative_path}")
-    recorded_poni = Path(str(metadata.get("geometry", {}).get("poni", ""))).resolve()
+    recorded_poni = _resolve_package_path(
+        metadata.get("geometry", {}).get("poni"),
+        package_root,
+        label="PONI path",
+    )
     if recorded_poni != poni_path:
         raise ValueError(f"2D metadata PONI pointer mismatch for {item.relative_path}")
     recorded_poni_sha = str(
@@ -389,18 +556,8 @@ def _validate_metadata(
     normalization = recommended.get("normalization_factor")
     if isinstance(normalization, bool) or normalization != 1.0:
         raise ValueError(f"2D reintegration normalization must be 1 for {item.relative_path}")
-    if recommended.get("correctSolidAngle") is not True:
-        raise ValueError(
-            f"2D reintegration correctSolidAngle must be true for {item.relative_path}"
-        )
-    if (
-        "polarization_factor" not in recommended
-        or recommended["polarization_factor"] is not None
-    ):
-        raise ValueError(
-            f"2D reintegration polarization_factor must be null for {item.relative_path}"
-        )
-    return metadata, _metadata_scientific_sha256(metadata)
+    contract = _reintegration_contract(metadata, item)
+    return metadata, _metadata_scientific_sha256(metadata), contract
 
 
 def _load_validate_edf(item: _InputRow, metadata: dict[str, Any], mask: np.ndarray) -> np.ndarray:
@@ -433,8 +590,8 @@ def _integrate(ai: Any, image: np.ndarray, mask: np.ndarray, config: Integrate1D
         unit=config.unit,
         method=config.method,
         mask=mask,
-        correctSolidAngle=True,
-        polarization_factor=None,
+        correctSolidAngle=bool(config.correct_solid_angle),
+        polarization_factor=config.polarization_factor,
         dark=None,
         flat=None,
         normalization_factor=1.0,
@@ -463,8 +620,6 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
     package = Path(config.package_root).resolve(strict=True)
     if config.npt != 5500 or config.unit != "q_A^-1" or config.method.casefold() != "csr":
         raise ValueError("BL19B2 production integration requires 5500 q_A^-1 points with CSR")
-    if config.correct_solid_angle is not True or config.polarization_factor is not None:
-        raise ValueError("BL19B2 production integration requires solid-angle=True and no polarization")
     manifest, manifest_bytes, items = _read_manifest(config)
     poni = _package_file(
         Path(config.poni_path or _find_single(package / "config" / "geometry", "*.poni", "PONI")),
@@ -478,16 +633,25 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
     mask = _load_mask(mask_path)
     poni_sha256 = _file_sha256(poni)
     mask_array_sha256 = _mask_checksum(mask)
-    validated_inputs: dict[Path, tuple[dict[str, Any], str, str]] = {}
+    validated_inputs: dict[Path, tuple[dict[str, Any], str, str, dict[str, Any]]] = {}
     selection_rows: list[dict[str, str]] = []
+    reintegration_contract: dict[str, Any] | None = None
     for item in items:
-        metadata, metadata_scientific_sha = _validate_metadata(
+        metadata, metadata_scientific_sha, item_contract = _validate_metadata(
             item,
             mask_path,
             mask_checksum_sha256=mask_array_sha256,
             poni_path=poni,
             poni_sha256=poni_sha256,
+            package_root=package,
         )
+        if reintegration_contract is None:
+            reintegration_contract = item_contract
+        elif item_contract != reintegration_contract:
+            raise ValueError(
+                "selected 2D frames do not share one solid-angle/polarization "
+                f"reintegration contract; mismatch at {item.relative_path}"
+            )
         edf_sha = _file_sha256(item.edf)
         recorded_edf_sha = str(metadata.get("outputs", {}).get("edf_sha256", ""))
         if not recorded_edf_sha or edf_sha != recorded_edf_sha:
@@ -496,6 +660,7 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
             metadata,
             metadata_scientific_sha,
             edf_sha,
+            item_contract,
         )
         selection_rows.append(
             {
@@ -507,6 +672,13 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
                 "metadata_scientific_sha256": metadata_scientific_sha,
             }
         )
+    if reintegration_contract is None:  # pragma: no cover - _read_manifest guarantees rows
+        raise ValueError("2D manifest contains no reintegration contract")
+    effective_config = replace(
+        config,
+        correct_solid_angle=bool(reintegration_contract["correctSolidAngle"]),
+        polarization_factor=reintegration_contract["polarization_factor"],
+    )
     selection_doc = {
         "schema": "saxsabs.bl19b2_integrate1d.input_selection.v1",
         "frames": selection_rows,
@@ -521,14 +693,14 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
         "npt": config.npt,
         "unit": config.unit,
         "method": "csr",
-        "correctSolidAngle": True,
-        "polarization_factor": None,
+        "correctSolidAngle": effective_config.correct_solid_angle,
+        "polarization_factor": effective_config.polarization_factor,
         "dark": None,
         "flat": None,
         "normalization_factor": 1.0,
         "do_not_repeat": sorted(DO_NOT_REPEAT),
         "pyFAI_version": _version("pyFAI"),
-        **_fluorescence_config_payload(config),
+        **_fluorescence_config_payload(effective_config),
     }
     run_signature = _canonical_hash(signature_payload)
     out = config.output_root()
@@ -570,8 +742,10 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
     readme = (
         "# BL19B2 absolute 1D integration\n\n"
         "The EDF inputs were already corrected for dark, background, monitor, transmission, "
-        "thickness, and K. This step applies only the package mask and one solid-angle correction "
-        "during pyFAI CSR integration. No polarization correction is applied. "
+        "thickness, and K. This step applies only the package mask and the 2D package's "
+        f"solid-angle contract (correctSolidAngle={effective_config.correct_solid_angle}) "
+        "during pyFAI CSR integration, with "
+        f"polarization_factor={effective_config.polarization_factor!r}. "
         "Optional fluorescence subtraction, if configured, is applied to the absolute 1D curve.\n"
     ).encode("utf-8")
     _write_new_or_verify(out / "README.md", readme)
@@ -584,7 +758,7 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
     profiles: dict[Path, list[tuple[_InputRow, np.ndarray, np.ndarray, dict[str, Any]]]] = {}
     manifest_rows: list[dict[str, Any]] = []
     for item in items:
-        metadata, metadata_scientific_sha, edf_sha = validated_inputs[item.relative_path]
+        metadata, metadata_scientific_sha, edf_sha, _item_contract = validated_inputs[item.relative_path]
         frame_payload = {
             "run_signature": run_signature,
             "relative_path": item.relative_path.as_posix(),
@@ -604,29 +778,41 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
                 raise ValueError(f"1D resume frame signature mismatch for {item.relative_path}")
             if side_doc.get("profile_sha256") != _file_sha256(profile):
                 raise ValueError(f"1D resume profile checksum mismatch for {item.relative_path}")
+            side_policy = side_doc.get("integration_policy", {})
+            if (
+                side_policy.get("correctSolidAngle")
+                != effective_config.correct_solid_angle
+                or side_policy.get("polarization_factor")
+                != effective_config.polarization_factor
+            ):
+                raise ValueError(
+                    f"1D resume reintegration contract mismatch for {item.relative_path}"
+                )
             q, intensity = _read_profile(profile, config.npt)
             skipped += 1
         else:
             image = _load_validate_edf(item, metadata, mask)
-            q, intensity = _integrate(ai, image, mask, config)
-            intensity, fluorescence_diag = _apply_optional_fluorescence(q, intensity, config)
+            q, intensity = _integrate(ai, image, mask, effective_config)
+            intensity, fluorescence_diag = _apply_optional_fluorescence(
+                q, intensity, effective_config
+            )
             profile_data = _profile_bytes(q, intensity)
             _write_new_or_verify(profile, profile_data)
             side_doc = {
                 "schema": SCHEMA_VERSION,
                 "frame_signature": frame_signature,
                 "frame_signature_payload": frame_payload,
-                "profile": str(profile),
+                "profile": profile.relative_to(out).as_posix(),
                 "profile_sha256": _sha256_bytes(profile_data),
-                "q_points": config.npt,
+                "q_points": effective_config.npt,
                 "q_min_A^-1": float(q[0]),
                 "q_max_A^-1": float(q[-1]),
                 "integration_policy": {
                     "unit": "q_A^-1",
                     "method": "csr",
-                    "mask": str(mask_path),
-                    "correctSolidAngle": True,
-                    "polarization_factor": None,
+                    "mask": mask_path.relative_to(package).as_posix(),
+                    "correctSolidAngle": effective_config.correct_solid_angle,
+                    "polarization_factor": effective_config.polarization_factor,
                     "dark": None,
                     "flat": None,
                     "normalization_factor": 1.0,

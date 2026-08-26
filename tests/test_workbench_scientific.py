@@ -134,6 +134,63 @@ def test_tab3_two_theta_requires_wavelength_and_converts_to_q():
     assert conversion == "two_theta_deg_to_q_a^-1"
 
 
+def test_workbench_custom_reference_converts_nm_q_and_rejects_two_theta(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.t1_std_type = _Var("Custom")
+    app.t1_std_ref_path = _Var("reference.dat")
+    profiles = {
+        "q": {
+            "x": np.array([0.1, 0.2, 0.3]),
+            "x_col": "q",
+            "x_unit": "nm^-1",
+            "x_unit_raw": "nm^-1",
+            "intensity": np.array([1.0, 2.0, 3.0]),
+        },
+        "two_theta": {
+            "x": np.array([1.0, 2.0, 3.0]),
+            "x_col": "2theta",
+            "intensity": np.array([1.0, 2.0, 3.0]),
+        },
+    }
+    captured = {}
+    monkeypatch.setattr(
+        "saxsabs.io.parsers.read_external_1d_profile",
+        lambda _path: profiles["q"],
+    )
+    monkeypatch.setattr(
+        module,
+        "get_reference_data",
+        lambda _key, q_user, i_user: (captured.setdefault("q", q_user), i_user),
+    )
+
+    app._get_std_reference_data()
+    np.testing.assert_allclose(captured["q"], np.array([0.01, 0.02, 0.03]))
+
+    monkeypatch.setattr(
+        "saxsabs.io.parsers.read_external_1d_profile",
+        lambda _path: profiles["two_theta"],
+    )
+    with pytest.raises(ValueError, match="2theta|标准参考曲线"):
+        app._get_std_reference_data()
+
+
+def test_theme_control_reports_unavailable_without_sv_ttk(monkeypatch: pytest.MonkeyPatch):
+    module = _load_workbench_module()
+    if not hasattr(module, "_sv_ttk"):
+        pytest.skip("shared saxs_ui_kit theme backend is active")
+    module._sv_ttk = None
+    root = SimpleNamespace()
+    status = []
+    app = SimpleNamespace(_report_theme_unavailable=lambda: status.append("unavailable"))
+    root._app_ref = app
+
+    assert module.toggle_theme(root) is False
+    assert status == ["unavailable"]
+
+
 @pytest.mark.parametrize(
     ("x_col", "mode", "wavelength"),
     [
@@ -761,6 +818,75 @@ def test_tab2_fixed_references_still_fail_closed_when_paths_are_missing():
             monitor_mode="rate",
         )
 
+
+def test_tab2_fixed_reference_dry_check_rejects_sample_shape_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    monkeypatch.setattr(
+        module,
+        "_workbench_load_detector_image",
+        lambda _path, dtype=None: SimpleNamespace(data=np.zeros((3, 4))),
+    )
+    payload = {"fixed_dark_data": np.zeros((2, 2))}
+
+    with pytest.raises(ValueError, match="sample/reference shape mismatch"):
+        app.validate_fixed_reference_shape("sample.tif", payload)
+
+
+def test_tab2_radial_chi_with_fluorescence_fails_closed():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+
+    with pytest.raises(ValueError, match="radial_chi.*fluorescence"):
+        app.validate_t2_mode_contract(["radial_chi"], True)
+
+    app.validate_t2_mode_contract(["radial_chi"], False)
+
+
+def test_tab2_queue_normalization_removes_duplicate_paths_before_approval():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.t2_files = ["sample.tif", "sample.tif", "other.tif"]
+    app.refresh_queue_status = lambda: None
+    invalidated = []
+    app._invalidate_workbench_preflight = invalidated.append
+
+    normalized, changed = app.normalize_t2_queue()
+
+    assert changed is True
+    assert normalized == [str(Path("sample.tif")), str(Path("other.tif"))]
+    assert app.t2_files == normalized
+    assert invalidated == ["t2"]
+
+
+def test_tab3_queue_change_invalidates_old_approval_before_execution():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.t3_files = ["sample.dat", "sample.dat"]
+    app.t3_resume_enabled = _Var(False)
+    app.refresh_external_1d_status = lambda: None
+    invalidated = []
+    app._invalidate_workbench_preflight = invalidated.append
+    observed = {}
+
+    def require(tab):
+        observed["tab"] = tab
+        observed["files"] = list(app.t3_files)
+        raise RuntimeError("stale preflight approval")
+
+    app._require_current_workbench_preflight = require
+    errors = []
+    app.show_error = lambda _title, message: errors.append(message)
+
+    app.run_external_1d_batch()
+
+    assert observed == {"tab": "t3", "files": ["sample.dat"]}
+    assert invalidated == ["t3"]
+    assert errors and "stale preflight" in errors[0]
+
 def test_tab2_dry_run_marks_calibration_gate_failure_as_blocked():
     module = _load_workbench_module()
     app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
@@ -979,7 +1105,9 @@ def test_tab2_dry_run_blocks_structured_format_for_radial_chi():
 
 @pytest.mark.parametrize(
     ("export_cal2d", "expected_failed_files"),
-    [(False, 1), (True, 0)],
+    # Cal2D execution still consumes fixed BG/Dark references; missing or
+    # unreadable references must block every formal output mode.
+    [(False, 1), (True, 1)],
 )
 def test_tab2_dry_run_empty_modes_blocks_unless_cal2d_export_is_enabled(
     export_cal2d, expected_failed_files
@@ -2012,6 +2140,7 @@ def test_workbench_calibration_record_rejects_missing_or_tampered_context(
 def test_apply_session_invalidates_legacy_k_without_context(tmp_path):
     module = _load_workbench_module()
     app = _record_app(module)
+    app.language = "en"
     app.calibration_context = object()
     app.calibration_k_value = 2.5
     app.session_geometry_fallback = {}
@@ -2061,6 +2190,58 @@ def test_apply_session_safely_loads_complete_relative_calibration_record(tmp_pat
     assert app.calibration_k_value == pytest.approx(2.5)
     assert app.calibration_context.fingerprint() == context.fingerprint()
     assert any("record loaded" in message.lower() for message in shown)
+
+
+def test_apply_session_resolves_relative_paths_from_session_directory_and_reports_callback_error(
+    tmp_path: Path,
+):
+    module = _load_workbench_module()
+    app = _record_app(module)
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    standard = inputs / "standard.tif"
+    standard.write_bytes(b"placeholder")
+    app.t1_files = {"std": _Var("")}
+    app.on_load_std_t1 = lambda path: (_ for _ in ()).throw(RuntimeError("header callback failed"))
+    shown = []
+    app.show_error = lambda *_args, **_kwargs: None
+    app.show_info = lambda _title, message: shown.append(message)
+    session_path = tmp_path / "session.json"
+    session_path.write_text(
+        json.dumps(
+            {
+                "schema": "saxsabs.session.v1",
+                "calibration": {"std_path": "inputs/standard.tif"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    app.apply_session(str(session_path))
+
+    assert app.t1_files["std"].get() == str(standard.resolve())
+    assert any("callback load failed" in message.lower() for message in shown)
+
+
+def test_apply_session_rejects_invalid_geometry_and_clears_stale_k(tmp_path: Path):
+    module = _load_workbench_module()
+    app = _record_app(module)
+    app.language = "en"
+    app.calibration_context = object()
+    app.calibration_k_value = 3.0
+    shown = []
+    app.show_error = lambda _title, message: shown.append(message)
+    session_path = tmp_path / "invalid-session.json"
+    session_path.write_text(
+        json.dumps({"geometry": {"wl_A": 0.0}}),
+        encoding="utf-8",
+    )
+
+    app.apply_session(str(session_path))
+
+    assert app.calibration_context is None
+    assert app.calibration_k_value is None
+    assert shown and "geometry" in shown[0].lower()
 
 
 def test_calibrated_2d_reintegration_matches_direct_absolute_1d_with_same_policy():

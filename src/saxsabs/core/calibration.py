@@ -304,7 +304,30 @@ coverage_factor: Explicit system factor for reporting expanded K uncertainty.
         raise ValueError("q overlap with reference is insufficient")
 
     i_meas_interp = np.interp(q_ref_used, q_m, i_m)
-    valid = np.isfinite(i_meas_interp) & (i_meas_interp > positive_floor)
+    # ``np.interp`` linearly bridges a bad measured point.  That can turn a
+    # segment such as (1.0, -0.1, 1.0) into apparently positive values and
+    # invent a plausible K.  A reference point between measured samples is
+    # usable only when both bracketing measured endpoints pass the floor.  An
+    # exact source point needs only that source value itself.
+    raw_upper = np.searchsorted(q_m, q_ref_used, side="left")
+    exact_source = (raw_upper < q_m.size) & np.isclose(
+        q_m[np.clip(raw_upper, 0, q_m.size - 1)],
+        q_ref_used,
+        rtol=0.0,
+        atol=1e-14,
+    )
+    upper = np.clip(raw_upper, 1, q_m.size - 1)
+    lower = upper - 1
+    exact_indices = np.clip(raw_upper, 0, q_m.size - 1)
+    lower[exact_source] = exact_indices[exact_source]
+    upper[exact_source] = exact_indices[exact_source]
+    segment_valid = (
+        np.isfinite(i_m[lower])
+        & (i_m[lower] > positive_floor)
+        & np.isfinite(i_m[upper])
+        & (i_m[upper] > positive_floor)
+    )
+    valid = segment_valid & np.isfinite(i_meas_interp) & (i_meas_interp > positive_floor)
     if int(valid.sum()) < min_points:
         raise ValueError("measured signal too weak or non-positive in overlap region")
 
