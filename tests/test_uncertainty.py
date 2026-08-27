@@ -45,6 +45,11 @@ def test_complete_budget_keeps_components_and_combines_independent_variances():
     assert budget.unknown_components == ()
 
 
+def test_propagate_absolute_uncertainty_rejects_empty_intensity():
+    with pytest.raises(ValueError, match="empty"):
+        propagate_absolute_uncertainty(np.array([]))
+
+
 def test_missing_component_stays_unknown_and_prevents_optimistic_combination():
     budget = propagate_absolute_uncertainty(
         intensity=np.array([10.0, 20.0]),

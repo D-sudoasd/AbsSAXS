@@ -331,7 +331,7 @@ I18N = {
         "tip_t3_kd": "For external integrated result still in relative intensity (not divided by thickness).",
         "tip_t3_thk": "Only used in K/d mode. Unit: mm.",
         "tip_t3_k_only": "For external integrated result already divided by thickness.",
-        "tip_t3_x_mode": "'auto' requires explicit Q units (Å⁻¹ or nm⁻¹) or Chi. q_nm⁻¹ is converted to Å⁻¹; 2theta requires wavelength; unknown axes are blocked.",
+        "tip_t3_x_mode": "'auto' requires explicit Q units (Å⁻¹, nm⁻¹, or m⁻¹) or Chi. q_nm⁻¹ and q_m⁻¹ are converted to Å⁻¹; 2theta requires wavelength; unknown axes are blocked.",
         "tip_t3_resume": "Skip if output exists; for resuming large batches.",
         "tip_t3_overwrite": "Ignore existing results and recalculate.",
         "tip_t3_meta": "Optional. Supports metadata.csv or Tab2's batch_report.csv.",
@@ -399,6 +399,22 @@ I18N = {
         # --- Messagebox bodies ---
         "msg_meta_gen_title": "Metadata Generated",
         "msg_batch_done_title": "Batch Completed",
+        "msg_batch_done_body": (
+            "Robust batch processing completed.\n"
+            "Samples succeeded: {sample_success}\n"
+            "Samples partially successful: {sample_partial}\n"
+            "Samples skipped: {sample_skip}\n"
+            "Samples failed: {sample_fail}\n"
+            "Mode summary:\n{mode_summary}\n"
+            "Output directories:\n{dir_summary}\n"
+            "Report: {report}\n"
+            "Cal2D manifest: {cal2d_manifest}\n"
+            "Tab3 metadata: {tab3_metadata}\n"
+            "Metadata: {meta}"
+        ),
+        "msg_batch_no_1d": "No 1D, sector, or texture integration was run.",
+        "msg_not_enabled": "not enabled",
+        "msg_export_failed": "export failed",
         "msg_k_history_empty": "No K history yet; run calibration first.",
         "msg_k_history_file_empty": "History file is empty.",
         "msg_k_history_read_error": "Failed to read history: {e}",
@@ -494,6 +510,7 @@ I18N = {
         "reason_thk_invalid": "Thickness invalid (fixed thickness or metadata thk_mm)",
         # --- Ext 1D messagebox ---
         "msg_t3_queue_empty": "Queue is empty; please add external 1D files first.",
+        "msg_t2_queue_empty": "Queue is empty; please add sample files before Dry Check.",
         # --- Preview info labels ---
         "info_iq_sector": "Sector mode({n}): {desc}",
         "info_iq_full": "Full ring (valid pixels)",
@@ -506,6 +523,9 @@ I18N = {
         # --- Mu tool messagebox ---
         "msg_mu_wt_warn": "Total wt% = {w_tot}",
         "msg_mu_fail": "μ estimation failed: {e}",
+        "status_batch_running": "Batch is running...",
+        "status_batch_completed": "Batch completed.",
+        "status_batch_failed": "Batch failed; review the error details.",
     },
     "zh": {
         "app_title": f"{APP_NAME} v{APP_VERSION}",
@@ -754,7 +774,7 @@ I18N = {
         "tip_t3_kd": "适用于外部积分结果仍是相对强度（尚未除厚度）。",
         "tip_t3_thk": "仅在 K/d 模式下使用。单位 mm。",
         "tip_t3_k_only": "适用于外部积分结果已经做了厚度归一化。",
-        "tip_t3_x_mode": "auto 要求明确的 Q 单位(Å⁻¹或nm⁻¹)或 Chi；q_nm⁻¹会换算为Å⁻¹，2theta必须提供波长，未知轴阻止输出。",
+        "tip_t3_x_mode": "auto 要求明确的 Q 单位(Å⁻¹、nm⁻¹或m⁻¹)或 Chi；q_nm⁻¹和q_m⁻¹会换算为Å⁻¹，2theta必须提供波长，未知轴阻止输出。",
         "tip_t3_resume": "输出存在时跳过，适合大批量中断后继续。",
         "tip_t3_overwrite": "忽略已存在结果并重算。",
         "tip_t3_meta": "可选。支持 metadata.csv，或直接选择 Tab2 的 batch_report.csv。",
@@ -822,6 +842,22 @@ I18N = {
         # --- Messagebox bodies ---
         "msg_meta_gen_title": "metadata 已生成",
         "msg_batch_done_title": "批处理完成",
+        "msg_batch_done_body": (
+            "稳健批处理完成。\n"
+            "样品成功: {sample_success}\n"
+            "样品部分成功: {sample_partial}\n"
+            "样品已跳过: {sample_skip}\n"
+            "样品失败: {sample_fail}\n"
+            "模式统计:\n{mode_summary}\n"
+            "输出目录:\n{dir_summary}\n"
+            "报告: {report}\n"
+            "Cal2D manifest: {cal2d_manifest}\n"
+            "Tab3 metadata: {tab3_metadata}\n"
+            "元数据: {meta}"
+        ),
+        "msg_batch_no_1d": "未运行 1D、扇区或织构积分。",
+        "msg_not_enabled": "未启用",
+        "msg_export_failed": "导出失败",
         "msg_k_history_empty": "尚无 K 历史记录，请先运行一次标定。",
         "msg_k_history_file_empty": "历史文件为空。",
         "msg_k_history_read_error": "读取历史失败: {e}",
@@ -917,6 +953,7 @@ I18N = {
         "reason_thk_invalid": "厚度无效（固定厚度或metadata thk_mm）",
         # --- Ext 1D messagebox ---
         "msg_t3_queue_empty": "队列为空，请先添加外部1D文件。",
+        "msg_t2_queue_empty": "队列为空，请先添加样品文件再做预检查。",
         # --- Preview info labels ---
         "info_iq_sector": "扇区模式({n}): {desc}",
         "info_iq_full": "全环 (有效像素)",
@@ -929,6 +966,9 @@ I18N = {
         # --- Mu tool messagebox ---
         "msg_mu_wt_warn": "总 wt% = {w_tot}",
         "msg_mu_fail": "μ 估算失败: {e}",
+        "status_batch_running": "批处理运行中……",
+        "status_batch_completed": "批处理完成。",
+        "status_batch_failed": "批处理失败，请查看错误详情。",
     },
 }
 
@@ -2134,9 +2174,13 @@ class SAXSAbsWorkbenchApp:
                     self._status_var.set(self.tr("status_ready"))
             except Exception:
                 pass
+        self._refresh_workbench_job_status_text()
         self.refresh_help_text()
-        self.refresh_queue_status()
-        self.refresh_external_1d_status()
+        # Language changes only redraw labels and derived display text.  They
+        # do not alter the scientific configuration that the last Dry Check
+        # approved, so retain both in-memory approvals here.
+        self.refresh_queue_status(invalidate=False)
+        self.refresh_external_1d_status(invalidate=False)
 
     def _register_i18n_widget(self, widget, key):
         if not hasattr(self, "_i18n_widgets"):
@@ -5765,8 +5809,9 @@ class SAXSAbsWorkbenchApp:
         self.lb_ext1d.delete(0, tk.END)
         self.refresh_external_1d_status()
 
-    def refresh_external_1d_status(self):
-        self._invalidate_workbench_preflight("t3")
+    def refresh_external_1d_status(self, invalidate=True):
+        if invalidate:
+            self._invalidate_workbench_preflight("t3")
         if hasattr(self, "t3_queue_info"):
             total = len(getattr(self, "t3_files", []))
             uniq = len(dict.fromkeys(getattr(self, "t3_files", [])))
@@ -6794,6 +6839,8 @@ class SAXSAbsWorkbenchApp:
                     return "a^-1"
                 if canonical == "nm^-1":
                     return "nm^-1"
+                if canonical == "m^-1":
+                    return "m^-1"
                 return None
 
             text = unicodedata.normalize("NFKC", str(value or "").strip().lower())
@@ -6834,7 +6881,7 @@ class SAXSAbsWorkbenchApp:
                 if not text.endswith(closer):
                     return None
                 text = text[1:-1].strip()
-            unit = r"(?:a|angstrom|nm)"
+            unit = r"(?:a|angstrom|nm|m)"
             matched = re.fullmatch(rf"1\s*/\s*({unit})", text)
             if matched is None:
                 matched = re.fullmatch(rf"({unit})\s*(?:\^\s*)?-\s*1", text)
@@ -6842,7 +6889,13 @@ class SAXSAbsWorkbenchApp:
                 matched = re.fullmatch(rf"(?:inverse|inv)\s*({unit})", text)
             if matched is None:
                 return None
-            return "nm^-1" if matched.group(1) == "nm" else "a^-1"
+            return (
+                "nm^-1"
+                if matched.group(1) == "nm"
+                else "m^-1"
+                if matched.group(1) == "m"
+                else "a^-1"
+            )
 
         raw_name = str(profile.get("x_col", "")).strip()
         normalized_name = unicodedata.normalize("NFKC", raw_name).lower()
@@ -6876,7 +6929,7 @@ class SAXSAbsWorkbenchApp:
             if q_unit is None:
                 raise ValueError(
                     f"外部 Q 轴单位不受支持: {profile_unit!r}；"
-                    "仅支持明确的 A^-1 或 nm^-1。"
+                    "仅支持明确的 A^-1、nm^-1 或 m^-1。"
                 )
             # The parser's x_unit contract is stronger than a misleading column
             # name or filename suffix: it explicitly identifies a Q axis.
@@ -6893,7 +6946,7 @@ class SAXSAbsWorkbenchApp:
             if q_unit is None:
                 raise ValueError(
                     f"Q轴单位未知或歧义: {raw_name!r}；"
-                    "必须明确为 A^-1/nm^-1 的倒数单位（^-1、1/unit 或 inverse/inv）。"
+                    "必须明确为 A^-1/nm^-1/m^-1 的倒数单位（^-1、1/unit 或 inverse/inv）。"
                 )
             named_axis = "q_a^-1"
         elif axis_kind == "two_theta":
@@ -6922,11 +6975,11 @@ class SAXSAbsWorkbenchApp:
             return x, "Chi_deg", "none"
         if selected == "q_a^-1":
             if q_unit is None:
-                raise ValueError(
-                    "Q轴单位未知或歧义；必须明确为 A^-1 或 nm^-1。"
-                )
+                raise ValueError("Q轴单位未知或歧义；必须明确为 A^-1、nm^-1 或 m^-1。")
             if q_unit == "nm^-1":
                 return x / 10.0, "Q_A^-1", "q_nm^-1_to_q_a^-1"
+            if q_unit == "m^-1":
+                return x * 1.0e-10, "Q_A^-1", "q_m^-1_to_q_a^-1"
             return x, "Q_A^-1", "none"
 
         raw_wavelength = wavelength_a
@@ -6964,7 +7017,12 @@ class SAXSAbsWorkbenchApp:
         sample_conversion = str(sample_profile.get("x_conversion", "")).strip()
         reference_conversion = str(reference_profile.get("x_conversion", "")).strip()
         allowed = {
-            "Q_A^-1": {"none", "two_theta_deg_to_q_a^-1", "q_nm^-1_to_q_a^-1"},
+            "Q_A^-1": {
+                "none",
+                "two_theta_deg_to_q_a^-1",
+                "q_nm^-1_to_q_a^-1",
+                "q_m^-1_to_q_a^-1",
+            },
             "Chi_deg": {"none"},
         }
         if sample_label not in allowed or sample_conversion not in allowed[sample_label]:
@@ -7702,7 +7760,9 @@ class SAXSAbsWorkbenchApp:
         txt.insert(tk.END, pd.DataFrame(rows).to_string(index=False))
 
     def run_external_1d_batch(self):
+        self._reset_workbench_job_state("t3")
         try:
+            self._set_workbench_job_state("t3", "running")
             files, _queue_changed = self.normalize_t3_queue()
             if bool(self.t3_resume_enabled.get()):
                 raise ValueError(
@@ -8205,8 +8265,10 @@ class SAXSAbsWorkbenchApp:
                     out_dir=out_dir, report=report_path.name, meta=meta_path.name,
                 ),
             )
+            self._set_workbench_job_state("t3", "completed")
 
         except Exception as e:
+            self._mark_workbench_job_failed("t3")
             self.show_error("msg_ext_error_title", f"{e}\n{traceback.format_exc()}")
 
     def init_tab_help(self):
@@ -10280,7 +10342,9 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             "dark_library": [],
         }
     def run_batch(self):
+        self._reset_workbench_job_state("t2")
         try:
+            self._set_workbench_job_state("t2", "running")
             original_queue_count = len(getattr(self, "t2_files", []) or [])
             files, queue_changed = self.normalize_t2_queue()
             if queue_changed:
@@ -10850,11 +10914,24 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2, ensure_ascii=False)
 
-            mode_summary = "\n".join(
-                [f"{m}: 成功{mode_ok_count[m]} / 跳过{mode_skip_count[m]} / 失败{mode_fail_count[m]}" for m in selected_modes]
-            )
+            if self.language == "en":
+                mode_summary = "\n".join(
+                    [
+                        f"{m}: success {mode_ok_count[m]} / skipped {mode_skip_count[m]} / "
+                        f"failed {mode_fail_count[m]}"
+                        for m in selected_modes
+                    ]
+                )
+            else:
+                mode_summary = "\n".join(
+                    [
+                        f"{m}: 成功{mode_ok_count[m]} / 跳过{mode_skip_count[m]} / "
+                        f"失败{mode_fail_count[m]}"
+                        for m in selected_modes
+                    ]
+                )
             if not mode_summary:
-                mode_summary = "未运行 1D/扇区/织构积分"
+                mode_summary = self.tr("msg_batch_no_1d")
             dir_lines = []
             if export_cal2d:
                 dir_lines.append(f"calibrated_2d -> {cal2d_root}")
@@ -10871,29 +10948,67 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                     dir_lines.append(f"1d_sector_sum -> {sector_combined_dir}")
             dir_summary = "\n".join(dir_lines)
 
-            messagebox.showinfo(
-                "批处理完成",
-                (
-                    "稳健批处理完成。\n"
-                    f"样品成功: {sample_success}\n"
-                    f"样品部分成功: {sample_partial}\n"
-                    f"样品已跳过: {sample_skip}\n"
-                    f"样品失败: {sample_fail}\n"
-                    f"模式统计:\n{mode_summary}\n"
-                    f"输出目录:\n{dir_summary}\n"
-                    f"报告: {report_path.name}\n"
-                    f"Cal2D manifest: {cal2d_manifest_path.name if cal2d_manifest_path else '未启用'}\n"
-                    f"Tab3 metadata: {tab3_meta_stamp.name if tab3_meta_stamp else '导出失败'}\n"
-                    f"元数据: {meta_path.name}"
+            self._show_batch_completion(
+                sample_success=sample_success,
+                sample_partial=sample_partial,
+                sample_skip=sample_skip,
+                sample_fail=sample_fail,
+                mode_summary=mode_summary,
+                dir_summary=dir_summary,
+                report=report_path.name,
+                cal2d_manifest=(
+                    cal2d_manifest_path.name if cal2d_manifest_path else None
                 ),
+                tab3_metadata=(
+                    tab3_meta_stamp.name if tab3_meta_stamp else None
+                ),
+                meta=meta_path.name,
             )
+            self._set_workbench_job_state("t2", "completed")
 
         except Exception as e:
+            self._mark_workbench_job_failed("t2")
             self.show_error("msg_batch_error_title", f"{e}\n{traceback.format_exc()}")
 
     # --- Helpers ---
-    def refresh_queue_status(self):
-        self._invalidate_workbench_preflight("t2")
+    def _format_batch_completion_message(
+        self,
+        *,
+        sample_success,
+        sample_partial,
+        sample_skip,
+        sample_fail,
+        mode_summary,
+        dir_summary,
+        report,
+        cal2d_manifest=None,
+        tab3_metadata=None,
+        meta,
+    ):
+        """Format the localized Tab 2 completion body from run results."""
+        return self.tr("msg_batch_done_body").format(
+            sample_success=sample_success,
+            sample_partial=sample_partial,
+            sample_skip=sample_skip,
+            sample_fail=sample_fail,
+            mode_summary=mode_summary,
+            dir_summary=dir_summary,
+            report=report,
+            cal2d_manifest=cal2d_manifest or self.tr("msg_not_enabled"),
+            tab3_metadata=tab3_metadata or self.tr("msg_export_failed"),
+            meta=meta,
+        )
+
+    def _show_batch_completion(self, **summary):
+        """Show the Tab 2 completion dialog through the I18N message key."""
+        self.show_info(
+            "msg_batch_done_title",
+            self._format_batch_completion_message(**summary),
+        )
+
+    def refresh_queue_status(self, invalidate=True):
+        if invalidate:
+            self._invalidate_workbench_preflight("t2")
         if hasattr(self, "t2_queue_info"):
             total = len(getattr(self, "t2_files", []))
             uniq = len(dict.fromkeys(getattr(self, "t2_files", [])))
@@ -10954,21 +11069,96 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         return str(value)
 
     @staticmethod
-    def _preflight_file_identity(path):
+    def _preflight_var_bool(value):
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @staticmethod
+    def _preflight_file_identity(path, *, active=True):
         text = str(path or "").strip()
+        if not active:
+            return {
+                "path": "",
+                "raw_path": text,
+                "exists": False,
+                "size": None,
+                "mtime_ns": None,
+                "sha256": None,
+                "identity_active": False,
+                "identity_valid": None,
+                "identity_error": "input not enabled",
+            }
         if not text:
-            return {"path": "", "exists": False}
+            # An active input slot with no path is a missing identity.  Optional
+            # slots call this helper with active=False when they are disabled.
+            return {
+                "path": "",
+                "raw_path": "",
+                "exists": False,
+                "size": None,
+                "mtime_ns": None,
+                "sha256": None,
+                "identity_active": True,
+                "identity_valid": False,
+                "identity_error": "path not supplied",
+            }
+
+        resolved = None
+
+        def failed(*, exists, error, stat_result=None):
+            return {
+                "path": str(resolved) if resolved is not None else text,
+                "raw_path": text,
+                "exists": bool(exists),
+                "size": int(stat_result.st_size) if stat_result is not None else None,
+                "mtime_ns": int(stat_result.st_mtime_ns) if stat_result is not None else None,
+                "sha256": None,
+                "identity_active": True,
+                "identity_valid": False,
+                "identity_error": str(error),
+            }
+
         try:
             resolved = Path(text).expanduser().resolve()
-            stat = resolved.stat()
+            before = resolved.stat()
+            if not resolved.is_file():
+                return failed(exists=True, error="path is not a regular file", stat_result=before)
+
+            digest = hashlib.sha256()
+            bytes_read = 0
+            with resolved.open("rb") as stream:
+                while True:
+                    chunk = stream.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    bytes_read += len(chunk)
+
+            after = resolved.stat()
+            if (
+                bytes_read != int(before.st_size)
+                or int(before.st_size) != int(after.st_size)
+                or int(before.st_mtime_ns) != int(after.st_mtime_ns)
+            ):
+                return failed(
+                    exists=True,
+                    error="file changed while hashing",
+                    stat_result=after,
+                )
             return {
                 "path": str(resolved),
+                "raw_path": text,
                 "exists": True,
-                "size": int(stat.st_size),
-                "mtime_ns": int(stat.st_mtime_ns),
+                "size": int(after.st_size),
+                "mtime_ns": int(after.st_mtime_ns),
+                "sha256": digest.hexdigest(),
+                "identity_active": True,
+                "identity_valid": True,
+                "identity_error": None,
             }
-        except OSError:
-            return {"path": text, "exists": False}
+        except (OSError, RuntimeError) as exc:
+            return failed(exists=False, error=f"file identity unavailable: {exc}")
 
     def _preflight_calibration_identity(self):
         context = getattr(self, "calibration_context", None)
@@ -10978,9 +11168,14 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 fingerprint = str(context.fingerprint())
             except (AttributeError, TypeError, ValueError):
                 fingerprint = None
+        record_path = str(getattr(self, "calibration_record_path", None) or "")
         return {
             "context_fingerprint": fingerprint,
-            "record_path": str(getattr(self, "calibration_record_path", None) or ""),
+            "record_path": record_path,
+            "record_path_identity": self._preflight_file_identity(
+                record_path,
+                active=bool(record_path.strip()),
+            ),
             "provenance_complete": self._preflight_var_value(
                 getattr(self, "calibration_record_provenance_complete", None)
             ),
@@ -10992,20 +11187,37 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             ),
         }
 
-    def _preflight_global_config(self):
+    def _preflight_global_config(self, *, tab=None, reference_mode=None):
         global_vars = getattr(self, "global_vars", {}) or {}
         values = {
             key: self._preflight_var_value(value)
             for key, value in sorted(global_vars.items())
         }
+
+        if reference_mode is None:
+            reference_mode = self._preflight_var_value(
+                getattr(self, "t2_ref_mode", None), default=""
+            )
+        reference_mode = str(reference_mode or "").strip().lower()
         for key in ("poni_path", "bg_path", "dark_path", "mask_path", "flat_path"):
             if key in values:
-                if key in {"bg_path", "dark_path"}:
-                    paths = str(values[key] or "").split(";")
+                raw_value = values[key]
+                if key == "poni_path":
+                    active = tab == "t2" and bool(str(raw_value or "").strip())
+                elif key in {"bg_path", "dark_path"}:
+                    active = tab == "t2" and reference_mode == "fixed"
                 else:
-                    paths = [values[key]]
+                    active = tab == "t2" and bool(str(raw_value or "").strip())
+
+                if key in {"bg_path", "dark_path"}:
+                    paths = self.split_path_list(raw_value)
+                    if not paths:
+                        paths = [raw_value]
+                else:
+                    paths = [raw_value]
                 values[f"{key}_identity"] = [
-                    self._preflight_file_identity(path) for path in paths
+                    self._preflight_file_identity(path, active=active)
+                    for path in paths
                 ]
         return values
 
@@ -11030,8 +11242,22 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             for name in names
         }
         calc_mode = str(config.get("t2_calc_mode") or "fixed").strip().lower()
+        reference_mode = str(config.get("t2_ref_mode") or "").strip().lower()
         if calc_mode != "auto":
             config["t2_mu"] = None
+        for name in ("t2_mask_path", "t2_flat_path"):
+            config[f"{name}_identity"] = self._preflight_file_identity(
+                config[name], active=bool(str(config[name] or "").strip())
+            )
+        fluo_method = str(config.get("t2_fluo_method") or "").strip().lower()
+        fluo_enabled = self._preflight_var_bool(config.get("t2_fluo_enabled"))
+        config["t2_fluo_path_identity"] = self._preflight_file_identity(
+            config["t2_fluo_path"],
+            active=(
+                fluo_enabled
+                and fluo_method == "measured"
+            ),
+        )
         files = list(dict.fromkeys(str(item) for item in getattr(self, "t2_files", [])))
         bg_files = list(
             dict.fromkeys(str(item) for item in getattr(self, "t2_bg_candidates", []))
@@ -11047,11 +11273,17 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 else None
             ),
             "files": [self._preflight_file_identity(path) for path in files],
-            "bg_candidates": [self._preflight_file_identity(path) for path in bg_files],
-            "dark_candidates": [
-                self._preflight_file_identity(path) for path in dark_files
+            "bg_candidates": [
+                self._preflight_file_identity(path, active=reference_mode == "auto")
+                for path in bg_files
             ],
-            "global": self._preflight_global_config(),
+            "dark_candidates": [
+                self._preflight_file_identity(path, active=reference_mode == "auto")
+                for path in dark_files
+            ],
+            "global": self._preflight_global_config(
+                tab="t2", reference_mode=config.get("t2_ref_mode")
+            ),
             "calibration": self._preflight_calibration_identity(),
         })
         return config
@@ -11073,19 +11305,31 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             name: self._preflight_var_value(getattr(self, name, None))
             for name in names
         }
+        pipeline_mode = str(config.get("t3_pipeline_mode") or "").strip().lower()
+        buffer_enabled = self._preflight_var_bool(config.get("t3_buffer_enabled"))
+        fluo_method = str(config.get("t3_fluo_method") or "").strip().lower()
+        fluo_enabled = self._preflight_var_bool(config.get("t3_fluo_enabled"))
         files = list(dict.fromkeys(str(item) for item in getattr(self, "t3_files", [])))
-        for name in (
-            "t3_meta_csv_path",
-            "t3_bg1d_path",
-            "t3_dark1d_path",
-            "t3_buffer_path",
-            "t3_fluo_path",
-        ):
-            config[f"{name}_identity"] = self._preflight_file_identity(config[name])
+        active_paths = {
+            "t3_meta_csv_path": pipeline_mode == "raw"
+            and bool(str(config["t3_meta_csv_path"] or "").strip()),
+            "t3_bg1d_path": pipeline_mode == "raw",
+            "t3_dark1d_path": pipeline_mode == "raw"
+            and bool(str(config["t3_dark1d_path"] or "").strip()),
+            "t3_buffer_path": buffer_enabled,
+            "t3_fluo_path": (
+                fluo_enabled
+                and fluo_method == "measured"
+            ),
+        }
+        for name, active in active_paths.items():
+            config[f"{name}_identity"] = self._preflight_file_identity(
+                config[name], active=active
+            )
         config.update({
             "schema": "saxsabs-workbench-tab3-preflight-v1",
             "files": [self._preflight_file_identity(path) for path in files],
-            "global": self._preflight_global_config(),
+            "global": self._preflight_global_config(tab="t3"),
             "calibration": self._preflight_calibration_identity(),
         })
         return config
@@ -11100,6 +11344,68 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 button.configure(state="disabled")
             except (AttributeError, tk.TclError):
                 pass
+
+    def _set_workbench_job_state(self, tab, state):
+        """Record a small, testable lifecycle state for a Tab 2/3 job."""
+        normalized_state = str(state)
+        setattr(self, f"{tab}_job_status", normalized_state)
+        if normalized_state in {"running", "completed", "failed"}:
+            self._workbench_last_job_tab = tab
+        status_keys = {
+            "running": "status_batch_running",
+            "completed": "status_batch_completed",
+            "failed": "status_batch_failed",
+        }
+        key = status_keys.get(normalized_state)
+        if key is None or not hasattr(self, "_status_var"):
+            return
+        try:
+            self._status_var.set(self.tr(key))
+        except (AttributeError, tk.TclError, TypeError, ValueError):
+            pass
+
+    def _refresh_workbench_job_status_text(self):
+        """Re-localize the visible status bar without changing job state."""
+        if not hasattr(self, "_status_var"):
+            return
+        status_keys = {
+            "running": "status_batch_running",
+            "completed": "status_batch_completed",
+            "failed": "status_batch_failed",
+        }
+        preferred = getattr(self, "_workbench_last_job_tab", None)
+        tabs = [preferred] if preferred in {"t2", "t3"} else []
+        tabs.extend(tab for tab in ("t2", "t3") if tab not in tabs)
+        for tab in tabs:
+            state = getattr(self, f"{tab}_job_status", None)
+            key = status_keys.get(str(state))
+            if key is None:
+                continue
+            try:
+                self._status_var.set(self.tr(key))
+            except (AttributeError, tk.TclError, TypeError, ValueError):
+                pass
+            return
+
+    def _reset_workbench_job_state(self, tab):
+        """Clear stale progress before any new preflight or execution work."""
+        bar = getattr(self, "prog_bar" if tab == "t2" else "t3_prog_bar", None)
+        if bar is not None:
+            try:
+                bar["value"] = 0
+            except (AttributeError, KeyError, tk.TclError, TypeError, ValueError):
+                pass
+        self._set_workbench_job_state(tab, "idle")
+
+    def _mark_workbench_job_failed(self, tab):
+        """Never leave a failed job displaying the previous run's 100 percent."""
+        bar = getattr(self, "prog_bar" if tab == "t2" else "t3_prog_bar", None)
+        if bar is not None:
+            try:
+                bar["value"] = 0
+            except (AttributeError, KeyError, tk.TclError, TypeError, ValueError):
+                pass
+        self._set_workbench_job_state(tab, "failed")
 
     def _bind_preflight_invalidation(self, tab, variables):
         for variable in variables:
@@ -11129,6 +11435,28 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         if require_current_preflight is None:
             raise RuntimeError("Run blocked: workbench preflight safety helper is unavailable.")
         config = self._t2_preflight_config() if tab == "t2" else self._t3_preflight_config()
+        invalid_paths = []
+
+        def collect(value):
+            if isinstance(value, dict):
+                if "identity_valid" in value and "path" in value:
+                    if value.get("identity_valid") is False:
+                        invalid_paths.append(
+                            str(value.get("path") or "<unspecified>")
+                        )
+                for nested in value.values():
+                    collect(nested)
+            elif isinstance(value, (list, tuple)):
+                for nested in value:
+                    collect(nested)
+
+        collect(config)
+        if invalid_paths:
+            preview = ", ".join(dict.fromkeys(invalid_paths))
+            raise RuntimeError(
+                "Run blocked: input file identity is missing, unreadable, or changed "
+                f"({preview}); run Dry Check again."
+            )
         approval = getattr(self, f"{tab}_preflight_approval", None)
         return require_current_preflight(approval, config)
 
@@ -11172,6 +11500,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
 
     def dry_run(self):
         if not self.t2_files:
+            self.show_info("msg_preview_title", self.tr("msg_t2_queue_empty"))
             return
         original_queue_count = len(self.t2_files)
         files, queue_changed = self.normalize_t2_queue()
@@ -12405,9 +12734,13 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 )
                 if prepared.get("x_label") != "Q_A^-1" or prepared.get(
                     "x_conversion"
-                ) not in {"none", "q_nm^-1_to_q_a^-1"}:
+                ) not in {
+                    "none",
+                    "q_nm^-1_to_q_a^-1",
+                    "q_m^-1_to_q_a^-1",
+                }:
                     raise ValueError(
-                        "标准参考曲线必须明确标记为 Q 轴（A^-1 或 nm^-1）；"
+                        "标准参考曲线必须明确标记为 Q 轴（A^-1、nm^-1 或 m^-1）；"
                         "缺失、chi 或 2theta 轴语义均不允许用于 K 标定。"
                     )
                 q_user = prepared["x"]

@@ -870,8 +870,28 @@ def _parse_float(raw: Any) -> float | None:
     return value
 
 
+_STRICT_FLOAT_PATTERN = re.compile(
+    r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+)
+
+
+def _parse_strict_float(raw: Any) -> float | None:
+    """Parse one complete finite numeric token without accepting unit text."""
+
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text or _STRICT_FLOAT_PATTERN.fullmatch(text) is None:
+        return None
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
 def _parse_required_float(fields: dict[str, str], key: str, path: Path) -> float:
-    value = _parse_float(fields.get(key))
+    value = _parse_strict_float(fields.get(key))
     if value is None:
         raise ValueError(f"{path} missing numeric {key}")
     return value
@@ -884,8 +904,48 @@ def _parse_required_positive_float(fields: dict[str, str], key: str, path: Path)
     return value
 
 
+def _parse_optional_strict_float(
+    fields: dict[str, str], key: str, path: Path
+) -> float | None:
+    raw = fields.get(key)
+    if raw is None or not str(raw).strip():
+        return None
+    value = _parse_strict_float(raw)
+    if value is None:
+        raise ValueError(f"{path} invalid numeric {key}")
+    return value
+
+
 def _norm_key(key: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "", str(key).upper())
+
+
+def _strip_yaml_inline_comment(value: str) -> str:
+    """Strip an unquoted YAML comment while preserving ``#`` in quotes."""
+
+    quote: str | None = None
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if quote is None:
+            if char in {"'", '"'}:
+                quote = char
+            elif char == "#" and (index == 0 or value[index - 1].isspace()):
+                return value[:index].rstrip()
+        elif quote == "'":
+            if char == "'":
+                if index + 1 < len(value) and value[index + 1] == "'":
+                    index += 2
+                    continue
+                quote = None
+        else:
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                quote = None
+        index += 1
+    return value.strip()
 
 
 def _read_flat_yaml(path: str | Path) -> dict[str, str]:
@@ -896,7 +956,8 @@ def _read_flat_yaml(path: str | Path) -> dict[str, str]:
         if not line or line.startswith("#") or ":" not in line:
             continue
         key, value = line.split(":", 1)
-        fields[key.strip()] = value.strip().strip("'\"")
+        clean_value = _strip_yaml_inline_comment(value.strip())
+        fields[key.strip()] = clean_value.strip().strip("'\"")
     return fields
 
 
@@ -920,6 +981,9 @@ def parse_pydidas_cali_yaml(path: str | Path) -> PydidasCalibration:
     pixel_x_um = _parse_required_positive_float(fields, "detector_pxsizex", yaml_path)
     pixel_y_um = _parse_required_positive_float(fields, "detector_pxsizey", yaml_path)
     wavelength_angstrom = _parse_required_positive_float(fields, "xray_wavelength", yaml_path)
+    rot1 = _parse_optional_strict_float(fields, "detector_rot1", yaml_path)
+    rot2 = _parse_optional_strict_float(fields, "detector_rot2", yaml_path)
+    rot3 = _parse_optional_strict_float(fields, "detector_rot3", yaml_path)
     return PydidasCalibration(
         source_path=yaml_path,
         detector_name=fields.get("detector_name", "Pilatus 2M"),
@@ -928,9 +992,9 @@ def parse_pydidas_cali_yaml(path: str | Path) -> PydidasCalibration:
         poni2_m=_parse_required_float(fields, "detector_poni2", yaml_path),
         pixel1_m=round(pixel_y_um * 1e-6, 12),
         pixel2_m=round(pixel_x_um * 1e-6, 12),
-        rot1=_parse_float(fields.get("detector_rot1")) or 0.0,
-        rot2=_parse_float(fields.get("detector_rot2")) or 0.0,
-        rot3=_parse_float(fields.get("detector_rot3")) or 0.0,
+        rot1=0.0 if rot1 is None else rot1,
+        rot2=0.0 if rot2 is None else rot2,
+        rot3=0.0 if rot3 is None else rot3,
         wavelength_m=round(wavelength_angstrom * 1e-10, 23),
         mask_path=_resolve_yaml_path(fields.get("detector_mask_file"), yaml_path),
     )

@@ -494,6 +494,43 @@ def test_parse_pydidas_cali_yaml_rejects_nonpositive_required_geometry_values(
         parse_pydidas_cali_yaml(cali)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("detector_dist", "3.048m"),
+        ("xray_wavelength", "0.413junk"),
+        ("detector_poni1", "0.1 0.2"),
+        ("detector_rot1", "0.1 0.2"),
+    ],
+)
+def test_parse_pydidas_cali_yaml_rejects_non_numeric_geometry_tokens(
+    tmp_path: Path,
+    field: str,
+    value: str,
+):
+    cali = tmp_path / "Cali.yaml"
+    _write_pydidas_cali(cali, **{field: value})
+
+    with pytest.raises(ValueError, match=field):
+        parse_pydidas_cali_yaml(cali)
+
+
+def test_parse_pydidas_cali_yaml_accepts_numeric_inline_comments(tmp_path: Path):
+    cali = tmp_path / "Cali.yaml"
+    _write_pydidas_cali(
+        cali,
+        detector_dist="3.048 # m",
+        detector_name='"Pilatus #2M"',
+        detector_rot1="-0.01 # rad",
+    )
+
+    geometry = parse_pydidas_cali_yaml(cali)
+
+    assert geometry.distance_m == pytest.approx(3.048)
+    assert geometry.detector_name == "Pilatus #2M"
+    assert geometry.rot1 == pytest.approx(-0.01)
+
+
 def test_write_pydidas_poni_uses_pyfai_units(tmp_path: Path):
     cali = tmp_path / "Cali.yaml"
     cali.write_text(

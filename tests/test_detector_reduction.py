@@ -27,6 +27,19 @@ def test_normalize_detector_frame_scales_integrated_dark_by_exposure():
     np.testing.assert_allclose(result.image, [[10.0]])
 
 
+def test_normalize_detector_frame_rejects_empty_arrays():
+    with pytest.raises(ValueError, match="empty"):
+        normalize_detector_frame(
+            np.array([]),
+            np.array([]),
+            image_exposure_s=1.0,
+            dark_exposure_s=1.0,
+            monitor=1.0,
+            transmission=1.0,
+            monitor_mode="integrated",
+        )
+
+
 def test_normalize_detector_frame_rejects_nonfinite_dark_scale():
     with pytest.raises(ValueError, match="dark scale"):
         normalize_detector_frame(

@@ -430,6 +430,42 @@ def test_cli_q_normalization_is_shallow_and_idempotent():
     assert repeated["operator_provenance"]["q_unit_conversion"] == "nm^-1_to_A^-1"
 
 
+def test_cli_q_normalization_converts_reciprocal_metre_and_records_provenance():
+    profile = {
+        "x": [1.0e8, 2.0e8],
+        "x_col": "Q",
+        "x_unit": "1/m",
+        "operator_provenance": {},
+    }
+
+    converted = _normalize_q_profile(profile, profile_label="sample")
+
+    np.testing.assert_allclose(converted["x"], [0.01, 0.02])
+    assert converted["x_unit"] == "A^-1"
+    assert converted["operator_provenance"]["q_unit_original"] == "1/m"
+    assert converted["operator_provenance"]["q_unit_conversion"] == "m^-1_to_A^-1"
+
+
+def test_cli_q_normalization_converts_reciprocal_metre_from_text_profile(tmp_path: Path):
+    profile_path = tmp_path / "metre-q.csv"
+    profile_path.write_text(
+        "Q (1/m),I\n1.0e8,10\n2.0e8,9\n3.0e8,8\n",
+        encoding="utf-8",
+    )
+
+    profile = _read_profile_for_estimate(
+        profile_path,
+        q_col=None,
+        i_col=None,
+        profile_label="sample",
+    )
+    converted = _normalize_q_profile(profile, profile_label="sample")
+
+    np.testing.assert_allclose(converted["x"], [0.01, 0.02, 0.03])
+    assert converted["operator_provenance"]["q_unit_original"] == "m^-1"
+    assert converted["operator_provenance"]["q_unit_conversion"] == "m^-1_to_A^-1"
+
+
 def test_cli_q_normalization_rejects_unknown_unit_with_explicit_override():
     profile = {
         "x": [1.0, 2.0],

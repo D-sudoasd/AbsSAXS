@@ -211,10 +211,32 @@ scientific outputs silently.
 
 ## Reuse Command
 
-For a new beamtime, copy `examples/bl19b2_abs2d_template/processing_config.example.yml`,
-edit the paths, run a dry scan first, then run the full export.
+For a new beamtime, copy `examples/bl19b2_abs2d_template/processing_config.example.yml`
+and edit the paths. Always use the following two-step sequence: inspect the
+dry-run result first, then repeat the same command without `--dry-run` only
+after the inputs and planned output root have been confirmed.
 
-Template command:
+Step 1 — preflight only (no formal output publication):
+
+```powershell
+$env:PYTHONPATH='src'
+python -m saxsabs.cli bl19b2-abs2d `
+  --input-root '<BL19B2 DATA>\datXXX' `
+  --pydidas-cali-yaml '<BL19B2 DATA>\datXXX\reference_saxs\Cali.yaml' `
+  --output-root '<BL19B2 DATA>\datXXX_absolute_corrected_2D' `
+  --monitor-mode rate `
+  --mu 20.2 `
+  --standard-key SRM3600 `
+  --correct-solid-angle-for-k `
+  --no-polarization-correction `
+  --dry-run
+```
+
+Review the returned status, discovered sample inventory, geometry/mask
+selection, thickness and uncertainty gates, and output paths. Correct any
+failure or unexpected classification before continuing.
+
+Step 2 — formal run after explicit confirmation:
 
 ```powershell
 $env:PYTHONPATH='src'
