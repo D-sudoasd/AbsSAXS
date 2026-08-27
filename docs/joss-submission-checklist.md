@@ -1,7 +1,9 @@
 # JOSS submission checklist
 
 This checklist follows the current JOSS author and reviewer documentation,
-accessed 16 August 2026:
+accessed 27 August 2026. It is a release-readiness snapshot for the unreleased
+2.0.0 source candidate on `main`; the stable archived assets remain Release
+v1.1.1.
 
 - [Submission requirements](https://joss.readthedocs.io/en/latest/submitting.html)
 - [Paper format](https://joss.readthedocs.io/en/latest/paper.html)
@@ -11,9 +13,10 @@ accessed 16 August 2026:
 ## Pre-review screening gates
 
 - [ ] **More than six months of public development.** GitHub reports that this
-      repository was created on 25 February 2026. The date gate is therefore not
-      satisfied on 16 August 2026; 26 August 2026 is the first conservative
-      submission date, provided public development remains active.
+      repository was created on 25 February 2026. The first conservative
+      eligibility date is 26 August 2026; the author must still recheck the
+      public history on the actual submission date and keep this gate open until
+      that evidence is confirmed.
 - [ ] **Demonstrated research use.** The repository contains a concrete BL19B2
       workflow and reproducible synthetic validation material, but the author
       must supply evidence that the software has been used in research. Claims
@@ -43,6 +46,8 @@ accessed 16 August 2026:
 - [ ] Immediately before submission, record green push and Draft-PR runs for
       the exact submitted HEAD in the dated external validation record. Do not
       embed a self-referential commit hash in this tracked checklist.
+- [ ] Confirm that the submitted branch and 40-character SHA identify the same
+      revision as the visible public README, paper blobs, and successful CI run.
 - [ ] Verify that the public repository description, homepage concept DOI,
       visible README, and submitted branch identify the same candidate.
 - [ ] Run `scripts/check_public_candidate.py` against the completed confirmation
@@ -75,6 +80,9 @@ accessed 16 August 2026:
       acknowledgements, funding, conflicts of interest, and contribution roles.
 - [ ] The author confirms the complete AI disclosure and human review statement.
 - [ ] The author supplies research-use evidence suitable for the impact section.
+- [ ] Measured beamline/scientific acceptance is archived with raw inputs,
+      repeatability, and an independent comparison; synthetic validation and
+      engineering tests do not satisfy this gate.
 - [x] The current official Inara workflow converts the paper to TeX and
       well-formed JATS with citations and figures resolved.
 - [x] The current candidate PDF was built from Inara-generated TeX with

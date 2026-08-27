@@ -67,6 +67,69 @@ class TestCanSAS1DXML:
         with pytest.raises(ValueError, match="inconsistent Q units"):
             read_cansas1d_xml(xml_path)
 
+    def test_reader_rejects_unknown_nonempty_q_unit(self, tmp_path):
+        q, i_abs, err = self._make_data(4)
+        xml_path = tmp_path / "unknown-q-unit.xml"
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+
+        tree = ET.parse(xml_path)
+        namespace = "{urn:cansas1d:1.1}"
+        for q_element in tree.getroot().iter(f"{namespace}Q"):
+            q_element.set("unit", "furlong")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+
+        with pytest.raises(ValueError, match="unsupported Q unit"):
+            read_cansas1d_xml(xml_path)
+
+    def test_reader_rejects_missing_q_unit(self, tmp_path):
+        q, i_abs, err = self._make_data(4)
+        xml_path = tmp_path / "missing-q-unit.xml"
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+
+        tree = ET.parse(xml_path)
+        namespace = "{urn:cansas1d:1.1}"
+        for q_element in tree.getroot().iter(f"{namespace}Q"):
+            q_element.attrib.pop("unit", None)
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+
+        with pytest.raises(ValueError, match="Q unit"):
+            read_cansas1d_xml(xml_path)
+
+    def test_reader_accepts_reciprocal_metre_q_unit(self, tmp_path):
+        q, i_abs, err = self._make_data(4)
+        xml_path = tmp_path / "metre-q-unit.xml"
+        write_cansas1d_xml(xml_path, q, i_abs, err, metadata=ABS_META)
+
+        tree = ET.parse(xml_path)
+        namespace = "{urn:cansas1d:1.1}"
+        for q_element in tree.getroot().iter(f"{namespace}Q"):
+            q_element.set("unit", "1/m")
+        tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+
+        result = read_cansas1d_xml(xml_path)
+
+        assert result["x_unit"] == "m^-1"
+        np.testing.assert_allclose(result["x"], q, rtol=1e-6)
+
+    def test_writer_is_atomic_when_xml_write_fails(self, tmp_path, monkeypatch):
+        q, i_abs, err = self._make_data(4)
+        target = tmp_path / "atomic.xml"
+        write_cansas1d_xml(target, q, i_abs, err, metadata=ABS_META)
+        original = target.read_bytes()
+
+        def broken_write(_tree, file_or_filename, **_kwargs):
+            from pathlib import Path
+
+            Path(file_or_filename).write_text("partial", encoding="utf-8")
+            raise RuntimeError("simulated XML write failure")
+
+        monkeypatch.setattr(ET.ElementTree, "write", broken_write)
+        with pytest.raises(RuntimeError, match="simulated XML write failure"):
+            write_cansas1d_xml(target, q, i_abs, err, metadata=ABS_META)
+
+        assert target.read_bytes() == original
+        assert not list(tmp_path.glob(f".{target.name}.*.tmp"))
+
     def test_auto_detect_xml_extension(self, tmp_path):
         """read_external_1d_profile should auto-detect .xml files."""
         q, i_abs, err = self._make_data()
@@ -358,6 +421,49 @@ class TestNXcanSASHDF5:
         assert result["x_unit"] == "nm^-1"
         np.testing.assert_allclose(result["x"], q)
 
+    def test_reader_rejects_unknown_nonempty_q_unit(self, tmp_path):
+        h5_path = tmp_path / "unknown-q-unit.h5"
+        q = np.array([0.1, 0.2, 0.3])
+        intensity = np.array([10.0, 9.0, 8.0])
+        with h5py.File(h5_path, "w") as f:
+            data = f.create_group("sasdata01")
+            data.attrs["canSAS_class"] = "SASdata"
+            q_ds = data.create_dataset("Q", data=q)
+            q_ds.attrs["units"] = "furlong"
+            data.create_dataset("I", data=intensity).attrs["units"] = "1/cm"
+
+        with pytest.raises(ValueError, match="unsupported Q unit"):
+            read_nxcansas_h5(h5_path)
+
+    def test_reader_rejects_missing_q_unit(self, tmp_path):
+        h5_path = tmp_path / "missing-q-unit.h5"
+        q = np.array([0.1, 0.2, 0.3])
+        intensity = np.array([10.0, 9.0, 8.0])
+        with h5py.File(h5_path, "w") as f:
+            data = f.create_group("sasdata01")
+            data.attrs["canSAS_class"] = "SASdata"
+            data.create_dataset("Q", data=q)
+            data.create_dataset("I", data=intensity).attrs["units"] = "1/cm"
+
+        with pytest.raises(ValueError, match="Q unit"):
+            read_nxcansas_h5(h5_path)
+
+    def test_reader_accepts_reciprocal_metre_q_unit(self, tmp_path):
+        h5_path = tmp_path / "metre-q-unit.h5"
+        q = np.array([1.0e8, 2.0e8, 3.0e8])
+        intensity = np.array([10.0, 9.0, 8.0])
+        with h5py.File(h5_path, "w") as f:
+            data = f.create_group("sasdata01")
+            data.attrs["canSAS_class"] = "SASdata"
+            q_ds = data.create_dataset("Q", data=q)
+            q_ds.attrs["units"] = "1/m"
+            data.create_dataset("I", data=intensity).attrs["units"] = "1/cm"
+
+        result = read_nxcansas_h5(h5_path)
+
+        assert result["x_unit"] == "m^-1"
+        np.testing.assert_allclose(result["x"], q)
+
     def test_write_shape_mismatch_raises(self, tmp_path):
         h5_path = tmp_path / "bad.h5"
         try:
@@ -383,8 +489,10 @@ class TestNXcanSASHDF5:
             entry = f.create_group("sasentry01")
             data = entry.create_group("sasdata01")
             data.attrs["canSAS_class"] = "SASdata"
-            data.create_dataset("Q", data=np.array([0.1, 0.2, 0.3]))
-            data.create_dataset("I", data=np.array([10.0, 9.0]))
+            q_ds = data.create_dataset("Q", data=np.array([0.1, 0.2, 0.3]))
+            q_ds.attrs["units"] = "1/A"
+            i_ds = data.create_dataset("I", data=np.array([10.0, 9.0]))
+            i_ds.attrs["units"] = "1/cm"
 
         try:
             read_nxcansas_h5(h5_path)
@@ -430,8 +538,10 @@ class TestNXcanSASHDF5:
         with h5py.File(path, "w") as f:
             data = f.create_group("sasdata01")
             data.attrs["canSAS_class"] = "SASdata"
-            data.create_dataset("Q", data=np.array([0.1, bad_value, 0.3]))
-            data.create_dataset("I", data=np.array([10.0, 9.0, 8.0]))
+            q_ds = data.create_dataset("Q", data=np.array([0.1, bad_value, 0.3]))
+            q_ds.attrs["units"] = "1/A"
+            i_ds = data.create_dataset("I", data=np.array([10.0, 9.0, 8.0]))
+            i_ds.attrs["units"] = "1/cm"
         with pytest.raises(ValueError, match="finite"):
             read_nxcansas_h5(path)
 
@@ -440,8 +550,10 @@ class TestNXcanSASHDF5:
         with h5py.File(path, "w") as f:
             data = f.create_group("sasdata01")
             data.attrs["canSAS_class"] = "SASdata"
-            data.create_dataset("Q", data=np.ones((2, 2)))
-            data.create_dataset("I", data=np.ones((2, 2)))
+            q_ds = data.create_dataset("Q", data=np.ones((2, 2)))
+            q_ds.attrs["units"] = "1/A"
+            i_ds = data.create_dataset("I", data=np.ones((2, 2)))
+            i_ds.attrs["units"] = "1/cm"
         with pytest.raises(ValueError, match="1-D"):
             read_nxcansas_h5(path)
 
@@ -451,8 +563,11 @@ class TestNXcanSASHDF5:
         with h5py.File(path, "w") as f:
             data = f.create_group("sasdata01")
             data.attrs["canSAS_class"] = "SASdata"
-            data.create_dataset("Q", data=np.array([0.1, 0.2, 0.3]))
-            data.create_dataset("I", data=np.array([10.0, 9.0, 8.0]))
-            data.create_dataset("Idev", data=np.array([0.1, bad_value, 0.1]))
+            q_ds = data.create_dataset("Q", data=np.array([0.1, 0.2, 0.3]))
+            q_ds.attrs["units"] = "1/A"
+            i_ds = data.create_dataset("I", data=np.array([10.0, 9.0, 8.0]))
+            i_ds.attrs["units"] = "1/cm"
+            e_ds = data.create_dataset("Idev", data=np.array([0.1, bad_value, 0.1]))
+            e_ds.attrs["units"] = "1/cm"
         with pytest.raises(ValueError, match="Idev"):
             read_nxcansas_h5(path)

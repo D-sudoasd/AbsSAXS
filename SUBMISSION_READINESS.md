@@ -1,29 +1,32 @@
 # Submission readiness snapshot
 
-Updated: 16 August 2026 (Asia/Shanghai)
+Updated: 27 August 2026 (Asia/Shanghai)
 
-Review the unreleased 2.0.0 tree on `main`, not GitHub Release v1.1.1. Do not
-create `v2.0.0`, a GitHub Release, or a Zenodo version archive during review.
+Review the current unreleased 2.0.0 source candidate on `main`; the stable
+archive is GitHub Release v1.1.1 and its release assets. `v2.0.0` remains
+unreleased: do not create its tag, GitHub Release, or Zenodo version archive
+during this review.
 
 ## Locally verified
 
-- Full source suite: PASS in a fully provisioned Python 3.13 environment; exact
-  count and duration are retained in the dated external validation record.
-- Ruff: root modules, package, tests, paper scripts, and submission gate pass.
+- Full source suite: PASS under Python 3.11 and 3.12, with
+  `py -3.11 -B -m pytest -q -p no:cacheprovider --tb=short -W error` and the
+  equivalent Python 3.12 command each reporting `1155 passed`.
+- Full repository Ruff check: PASS.
+- Current `git diff --check`: PASS.
+- Distribution smoke from a clean temporary clone outside the checkout: sdist
+  and wheel builds, fresh-venv installation of `wheel[gui,hdf5]`, CLI/import/
+  `pip check`, and the `minimal_2d` synthetic smoke all PASS. The temporary
+  clone path is intentionally omitted because it is not durable evidence.
+- Python 3.10 and 3.13 remain pending the remote CI matrix; the local full-suite
+  evidence above covers only Python 3.11 and 3.12.
 - README: 5 local images and all local links resolve; SVG/image audit passes.
 - Minimal 2D example: 9×9 homemade radial average (not pyFAI) recovers planted
   K and sample maximum relative errors of `0.001933697...`; CSV, TSV, XML, and
-  HDF5 outputs are written with unknown uncertainty.
-- Fresh-copy distribution build: wheel and sdist PASS from a source tree
-  outside every Git checkout. The exact archive inventory is retained in the
-  dated external validation record; the sdist includes README assets,
-  workflows, docs, examples, tests, and paper sources.
-- Installed-wheel smoke: CLI reports `saxsabs 2.0.0`; `SASAbs`,
-  `saxs_mpl_style`, and `saxsabs` import from the temporary environment; the
-  copied minimal example passes outside the checkout. A fresh Python 3.13
-  environment resolves the declared GUI/HDF5 extras with no broken
-  requirements.
-- Paper: 1100-word body by the documented Pandoc method; 16 references; current
+  HDF5 outputs are written with unknown uncertainty. This synthetic smoke is
+  an engineering/reproducibility check, not BL19B2 measured scientific
+  acceptance.
+- Paper: 1228-word body by the documented Pandoc method; 16 references; current
   Inara TeX and well-formed JATS resolve both figures.
 - Review PDF: the official CI paper job produces a five-page draft whose pages,
   bounds, figures, citations, and embedded fonts have been visually checked.
@@ -56,6 +59,9 @@ create `v2.0.0`, a GitHub Release, or a Zenodo version archive during review.
 6. Before submission, verify that the public GitHub description, homepage
    concept DOI, visible README, submitted branch, and green CI all identify the
    exact candidate revision.
+7. Complete measured beamline/scientific acceptance with archived raw inputs,
+   repeatability, and an independent comparison; synthetic validation and
+   engineering tests do not satisfy this gate.
 Run the strict decision gate with Pandoc available:
 
 ```bash
@@ -64,10 +70,10 @@ python scripts/check_submission_readiness.py \
   --manual-confirmations path/to/submission-confirmations.json
 ```
 
-The gate must run on the exact branch and commit submitted to JOSS. PR #1 is
-already on `main`; rerun the gate on the clean `main` commit that will be
-submitted and record `submitted_branch` and `submitted_commit` accordingly.
-Evidence from an earlier revision is not evidence for a later commit.
+The gate must run on the exact branch and commit submitted to JOSS. Record the
+submitted branch and 40-character SHA, and require that the local/public
+README, paper blobs, and successful CI run all resolve to that same revision.
+Evidence from an earlier commit does not cover a later commit.
 
 After that local PASS, run:
 
@@ -83,7 +89,8 @@ editorialbot branch command when the paper is not on `main`.
 
 The current strict result is intentionally **FAIL** because the paper still has
 four author-input placeholders, no confirmed corresponding author, and no paper
-email. The mechanical preflight passes when
+email. No research-use evidence or measured scientific acceptance is recorded
+as complete. The mechanical preflight passes when
 `--allow-author-placeholders --as-of 2026-08-26` is used; this override is not a
 submission authorization.
 

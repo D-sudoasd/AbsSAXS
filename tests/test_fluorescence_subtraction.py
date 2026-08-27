@@ -201,6 +201,17 @@ def test_refuses_unlabeled_and_negative_f0():
         _sub(q, np.ones(3) * 5, np.ones(3) * 0.1, method="constant", f0=-0.1)
 
 
+def test_subtract_fluorescence_rejects_empty_public_arrays():
+    with pytest.raises(ValueError, match="empty"):
+        _sub(
+            np.array([]),
+            np.array([]),
+            np.array([]),
+            method="constant",
+            f0=1.0,
+        )
+
+
 def test_already_fluorescence_subtracted_is_refused():
     q = np.array([0.01, 0.02, 0.03])
     profile = {

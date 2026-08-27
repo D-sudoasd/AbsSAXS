@@ -233,7 +233,22 @@ def write_cansas1d_xml(
     tree = ET.ElementTree(root)
     ET.indent(tree, space="  ")
     out.parent.mkdir(parents=True, exist_ok=True)
-    tree.write(str(out), xml_declaration=True, encoding="utf-8")
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{out.name}.", suffix=".tmp", dir=str(out.parent)
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    committed = False
+    try:
+        tree.write(str(temporary), xml_declaration=True, encoding="utf-8")
+        os.replace(str(temporary), str(out))
+        committed = True
+    finally:
+        if not committed:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
     return out
 
 

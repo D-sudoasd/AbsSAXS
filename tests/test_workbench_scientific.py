@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -1660,6 +1661,444 @@ def test_workbench_preflight_detects_input_file_change(tmp_path):
     sample.write_bytes(b"changed-size")
     with pytest.raises(RuntimeError, match="configuration changed"):
         app._require_current_workbench_preflight("t2")
+
+
+def test_workbench_language_refresh_keeps_preflight_approvals_and_explicitly_skips_invalidation():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.root = SimpleNamespace(title=Mock())
+    app.refresh_help_text = Mock()
+    app._refresh_output_format_combos = Mock()
+    app.t2_preflight_approval = object()
+    app.t3_preflight_approval = object()
+    app.refresh_queue_status = Mock()
+    app.refresh_external_1d_status = Mock()
+
+    app.refresh_ui_language()
+
+    app.refresh_queue_status.assert_called_once_with(invalidate=False)
+    app.refresh_external_1d_status.assert_called_once_with(invalidate=False)
+    assert app.t2_preflight_approval is not None
+    assert app.t3_preflight_approval is not None
+
+
+def test_workbench_language_refresh_relocalizes_existing_job_status():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.root = SimpleNamespace(title=Mock())
+    app._status_var = _Var(module.I18N["en"]["status_batch_failed"])
+    app.t2_job_status = "failed"
+    app._workbench_last_job_tab = "t2"
+    app.refresh_help_text = Mock()
+    app.refresh_queue_status = Mock()
+    app.refresh_external_1d_status = Mock()
+
+    app.language = "zh"
+    app.refresh_ui_language()
+
+    assert app._status_var.get() == module.I18N["zh"]["status_batch_failed"]
+    assert app.t2_job_status == "failed"
+
+
+def test_workbench_status_refresh_defaults_to_preflight_invalidation():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app._invalidate_workbench_preflight = Mock()
+
+    app.refresh_queue_status()
+    app.refresh_external_1d_status()
+
+    assert [item.args for item in app._invalidate_workbench_preflight.call_args_list] == [
+        ("t2",),
+        ("t3",),
+    ]
+
+
+def test_workbench_preflight_file_identity_hash_detects_same_stat_content_replacement(
+    tmp_path,
+):
+    module = _load_workbench_module()
+    sample = tmp_path / "sample.tif"
+    sample.write_bytes(b"first!")
+    first = module.SAXSAbsWorkbenchApp._preflight_file_identity(sample)
+    original_stat = sample.stat()
+
+    sample.write_bytes(b"second")
+    os.utime(sample, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    second = module.SAXSAbsWorkbenchApp._preflight_file_identity(sample)
+
+    assert first["identity_valid"] is True
+    assert second["identity_valid"] is True
+    assert first["size"] == second["size"] == 6
+    assert first["mtime_ns"] == second["mtime_ns"]
+    assert first["sha256"] != second["sha256"]
+
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.global_vars = {}
+    app.t2_files = [str(sample)]
+    # Approve the original content, then replace it with the same-size content
+    # and restore the original timestamp to exercise the hash-only boundary.
+    sample.write_bytes(b"first!")
+    os.utime(sample, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    app.t2_preflight_approval = module.approve_preflight(
+        app._t2_preflight_config(), "READY"
+    )
+    sample.write_bytes(b"second")
+    os.utime(sample, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    with pytest.raises(RuntimeError, match="configuration changed"):
+        app._require_current_workbench_preflight("t2")
+
+
+def test_workbench_preflight_file_identity_fails_closed_for_unreadable_source(
+    tmp_path,
+    monkeypatch,
+):
+    module = _load_workbench_module()
+    sample = tmp_path / "sample.dat"
+    sample.write_bytes(b"profile")
+
+    def refuse_open(_self, *_args, **_kwargs):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr(module.Path, "open", refuse_open)
+    identity = module.SAXSAbsWorkbenchApp._preflight_file_identity(sample)
+
+    assert identity["exists"] is False
+    assert identity["identity_valid"] is False
+    assert identity["sha256"] is None
+    assert "permission denied" in identity["identity_error"]
+
+
+def test_workbench_preflight_does_not_accept_missing_file_identity(tmp_path):
+    module = _load_workbench_module()
+    missing = tmp_path / "missing.dat"
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.global_vars = {}
+    app.t2_files = [str(missing)]
+    app.t2_preflight_approval = module.approve_preflight(
+        app._t2_preflight_config(), "READY"
+    )
+
+    with pytest.raises(RuntimeError, match="identity.*missing|missing.*identity"):
+        app._require_current_workbench_preflight("t2")
+
+
+def test_tab2_empty_dry_check_reports_localized_prompt():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.t2_files = []
+    app.show_info = Mock()
+
+    app.dry_run()
+
+    app.show_info.assert_called_once_with(
+        "msg_preview_title", module.I18N["en"]["msg_t2_queue_empty"]
+    )
+
+
+def test_tab2_completion_message_is_localized_for_english_and_chinese():
+    module = _load_workbench_module()
+
+    assert "批处理完成" not in module.I18N["en"]["msg_batch_done_title"]
+    assert "稳健批处理完成" not in module.I18N["en"]["msg_batch_done_body"]
+    assert "Batch Completed" == module.I18N["en"]["msg_batch_done_title"]
+    assert "批处理完成" == module.I18N["zh"]["msg_batch_done_title"]
+
+
+def test_tab2_completion_call_uses_real_localized_formatter_path():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.show_info = Mock()
+
+    app._show_batch_completion(
+        sample_success=1,
+        sample_partial=0,
+        sample_skip=0,
+        sample_fail=0,
+        mode_summary="1d_full: success 1 / skipped 0 / failed 0",
+        dir_summary="1d_full -> processed_robust_1d_full",
+        report="batch_report.csv",
+        cal2d_manifest=None,
+        tab3_metadata=None,
+        meta="run_meta.json",
+    )
+
+    app.show_info.assert_called_once()
+    title_key, message = app.show_info.call_args.args
+    assert title_key == "msg_batch_done_title"
+    assert "Robust batch processing completed." in message
+    assert "batch_report.csv" in message
+    assert "not enabled" in message
+    assert "export failed" in message
+    assert "批处理" not in message
+
+
+def test_tab2_and_tab3_disabled_stale_optional_paths_are_not_hashed_as_active(
+    tmp_path,
+):
+    module = _load_workbench_module()
+    poni = tmp_path / "geometry.poni"
+    poni.write_text("poni", encoding="utf-8")
+    missing = tmp_path / "stale-disabled.dat"
+
+    t2 = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    t2.global_vars = {
+        "poni_path": _Var(str(poni)),
+        "bg_path": _Var(str(missing)),
+        "dark_path": _Var(str(missing)),
+        "mask_path": _Var(""),
+        "flat_path": _Var(""),
+    }
+    t2.t2_files = []
+    t2.t2_ref_mode = _Var("auto")
+    t2.t2_mask_path = _Var("")
+    t2.t2_flat_path = _Var("")
+    t2.t2_fluo_enabled = _Var(False)
+    t2.t2_fluo_method = _Var("measured")
+    t2.t2_fluo_path = _Var(str(missing))
+    t2_config = t2._t2_preflight_config()
+
+    assert t2_config["t2_fluo_path_identity"]["identity_active"] is False
+    assert t2_config["global"]["bg_path_identity"][0]["identity_active"] is False
+    assert t2_config["global"]["dark_path_identity"][0]["identity_active"] is False
+    t2.t2_preflight_approval = module.approve_preflight(t2_config, "READY")
+    t2._require_current_workbench_preflight("t2")
+
+    t3 = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    t3.global_vars = {
+        "poni_path": _Var(str(poni)),
+        "bg_path": _Var(str(missing)),
+        "dark_path": _Var(str(missing)),
+        "mask_path": _Var(str(missing)),
+        "flat_path": _Var(str(missing)),
+    }
+    t3.t3_files = []
+    t3.t3_pipeline_mode = _Var("scaled")
+    t3.t3_meta_csv_path = _Var(str(missing))
+    t3.t3_bg1d_path = _Var(str(missing))
+    t3.t3_dark1d_path = _Var(str(missing))
+    t3.t3_buffer_enabled = _Var(False)
+    t3.t3_buffer_path = _Var(str(missing))
+    t3.t3_fluo_enabled = _Var(False)
+    t3.t3_fluo_method = _Var("measured")
+    t3.t3_fluo_path = _Var(str(missing))
+    t3_config = t3._t3_preflight_config()
+
+    for key in (
+        "t3_meta_csv_path_identity",
+        "t3_bg1d_path_identity",
+        "t3_dark1d_path_identity",
+        "t3_buffer_path_identity",
+        "t3_fluo_path_identity",
+    ):
+        assert t3_config[key]["identity_active"] is False
+    assert all(
+        identity["identity_active"] is False
+        for key, identity in (
+            ("bg_path_identity", t3_config["global"].get("bg_path_identity", [{}])[0]),
+            ("dark_path_identity", t3_config["global"].get("dark_path_identity", [{}])[0]),
+        )
+    )
+    t3.t3_preflight_approval = module.approve_preflight(t3_config, "READY")
+    t3._require_current_workbench_preflight("t3")
+
+    # The raw path remains part of the canonical configuration, so changing a
+    # disabled value still invalidates an earlier approval without hashing it.
+    t3.t3_buffer_path.set(str(tmp_path / "another-disabled.dat"))
+    with pytest.raises(RuntimeError, match="configuration changed"):
+        t3._require_current_workbench_preflight("t3")
+
+
+def test_workbench_active_optional_path_missing_still_blocks_run(tmp_path):
+    module = _load_workbench_module()
+    missing = tmp_path / "missing-buffer.dat"
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.global_vars = {}
+    app.t3_files = []
+    app.t3_pipeline_mode = _Var("scaled")
+    app.t3_buffer_enabled = _Var(True)
+    app.t3_buffer_path = _Var(str(missing))
+    config = app._t3_preflight_config()
+    assert config["t3_buffer_path_identity"]["identity_active"] is True
+    assert config["t3_buffer_path_identity"]["identity_valid"] is False
+    app.t3_preflight_approval = module.approve_preflight(config, "READY")
+
+    with pytest.raises(RuntimeError, match="identity"):
+        app._require_current_workbench_preflight("t3")
+
+
+@pytest.mark.parametrize(
+    ("path_name", "extra_setup"),
+    [
+        ("t2_mask_path", lambda app, path: setattr(app, "t2_mask_path", _Var(str(path)))),
+        ("t2_flat_path", lambda app, path: setattr(app, "t2_flat_path", _Var(str(path)))),
+        (
+            "t2_fluo_path",
+            lambda app, path: (
+                setattr(app, "t2_fluo_enabled", _Var(True)),
+                setattr(app, "t2_fluo_method", _Var("measured")),
+                setattr(app, "t2_fluo_path", _Var(str(path))),
+            ),
+        ),
+    ],
+)
+def test_tab2_active_missing_optional_path_blocks_run(tmp_path, path_name, extra_setup):
+    module = _load_workbench_module()
+    missing = tmp_path / f"{path_name}.dat"
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.global_vars = {}
+    app.t2_files = []
+    app.t2_fluo_enabled = _Var(False)
+    app.t2_fluo_method = _Var("constant")
+    app.t2_fluo_path = _Var("")
+    extra_setup(app, missing)
+    config = app._t2_preflight_config()
+
+    assert config[f"{path_name}_identity"]["identity_active"] is True
+    assert config[f"{path_name}_identity"]["identity_valid"] is False
+    app.t2_preflight_approval = module.approve_preflight(config, "READY")
+
+    with pytest.raises(RuntimeError, match="identity"):
+        app._require_current_workbench_preflight("t2")
+
+
+def test_tab3_raw_active_missing_metadata_path_blocks_run(tmp_path):
+    module = _load_workbench_module()
+    missing = tmp_path / "missing-metadata.csv"
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.global_vars = {}
+    app.t3_files = []
+    app.t3_pipeline_mode = _Var("raw")
+    app.t3_meta_csv_path = _Var(str(missing))
+    config = app._t3_preflight_config()
+
+    assert config["t3_meta_csv_path_identity"]["identity_active"] is True
+    assert config["t3_meta_csv_path_identity"]["identity_valid"] is False
+    app.t3_preflight_approval = module.approve_preflight(config, "READY")
+
+    with pytest.raises(RuntimeError, match="identity"):
+        app._require_current_workbench_preflight("t3")
+
+
+@pytest.mark.parametrize(
+    ("tab", "enabled_name", "path_name", "method_setup"),
+    [
+        ("t2", "t2_fluo_enabled", "t2_fluo_path", lambda app: setattr(app, "t2_fluo_method", _Var("measured"))),
+        ("t3", "t3_buffer_enabled", "t3_buffer_path", lambda _app: None),
+    ],
+)
+def test_workbench_enabled_required_file_slot_with_blank_path_blocks_run(
+    tab,
+    enabled_name,
+    path_name,
+    method_setup,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.global_vars = {}
+    app.t2_files = []
+    app.t3_files = []
+    setattr(app, enabled_name, _Var(True))
+    setattr(app, path_name, _Var(""))
+    method_setup(app)
+    config = app._t2_preflight_config() if tab == "t2" else app._t3_preflight_config()
+
+    assert config[f"{path_name}_identity"]["identity_active"] is True
+    assert config[f"{path_name}_identity"]["identity_valid"] is False
+    setattr(app, f"{tab}_preflight_approval", module.approve_preflight(config, "READY"))
+
+    with pytest.raises(RuntimeError, match="identity"):
+        app._require_current_workbench_preflight(tab)
+
+
+@pytest.mark.parametrize(
+    ("axis_header", "x_values", "expected_conversion", "expected_q"),
+    [
+        ("q_m^-1", [1.0e8, 2.0e8], "q_m^-1_to_q_a^-1", [0.01, 0.02]),
+        ("1/m", [1.0e8, 2.0e8], "q_m^-1_to_q_a^-1", [0.01, 0.02]),
+    ],
+)
+def test_tab3_workbench_converts_m_inverse_q_to_angstrom_inverse(
+    axis_header,
+    x_values,
+    expected_conversion,
+    expected_q,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile = {
+        "x": np.asarray(x_values),
+        "x_col": "q",
+        "x_unit": axis_header,
+        "x_unit_raw": axis_header,
+    }
+
+    q, label, conversion = app.resolve_external_x_axis(
+        "profile.dat", profile, mode="auto"
+    )
+
+    np.testing.assert_allclose(q, expected_q)
+    assert label == "Q_A^-1"
+    assert conversion == expected_conversion
+
+
+def test_tab3_m_inverse_conversion_is_allowed_for_profile_alignment():
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    profile = {
+        "x": np.array([1.0e8, 2.0e8]),
+        "x_col": "q",
+        "x_unit": "m^-1",
+        "x_unit_raw": "1/m",
+    }
+    prepared = app.prepare_external_profile_axis("profile.dat", profile, mode="auto")
+    app.assert_external_profile_axis_compatible(prepared, prepared, "reference")
+class _FakeProgressBar:
+    def __init__(self, value=0):
+        self.values = {"value": value}
+
+    def __getitem__(self, key):
+        return self.values[key]
+
+    def __setitem__(self, key, value):
+        self.values[key] = value
+
+
+@pytest.mark.parametrize(
+    ("runner", "bar_name", "files_name", "resume_name"),
+    [
+        ("run_batch", "prog_bar", "t2_files", "t2_resume_enabled"),
+        ("run_external_1d_batch", "t3_prog_bar", "t3_files", "t3_resume_enabled"),
+    ],
+)
+def test_workbench_failed_run_clears_stale_progress_and_marks_failure(
+    runner,
+    bar_name,
+    files_name,
+    resume_name,
+):
+    module = _load_workbench_module()
+    app = module.SAXSAbsWorkbenchApp.__new__(module.SAXSAbsWorkbenchApp)
+    app.language = "en"
+    app.root = SimpleNamespace()
+    app._status_var = _Var("old status")
+    setattr(app, bar_name, _FakeProgressBar(value=100))
+    setattr(app, files_name, [])
+    setattr(app, resume_name, _Var(False))
+    app.normalize_t2_queue = lambda: ([], False)
+    app.normalize_t3_queue = lambda: ([], False)
+    app.show_error = Mock()
+
+    getattr(app, runner)()
+
+    assert getattr(app, bar_name)["value"] == 0
+    assert getattr(app, "t2_job_status", getattr(app, "t3_job_status", None)) == "failed"
+    app.show_error.assert_called_once()
 
 def test_workbench_requires_explicit_thickness_after_selecting_non_srm_standard():
     module = _load_workbench_module()

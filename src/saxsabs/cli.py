@@ -471,6 +471,9 @@ def _normalize_q_profile(
     if source_unit == "nm^-1":
         x = x / 10.0
         conversion = "nm^-1_to_A^-1"
+    elif source_unit == "m^-1":
+        x = x * 1.0e-10
+        conversion = "m^-1_to_A^-1"
 
     updated = dict(profile)
     updated["x"] = x.copy()

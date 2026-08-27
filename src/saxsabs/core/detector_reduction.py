@@ -82,6 +82,8 @@ def normalize_detector_frame(
     dark_arr = np.asarray(dark, dtype=np.float64)
     if image_arr.shape != dark_arr.shape:
         raise ValueError(f"dark shape mismatch: {dark_arr.shape} vs {image_arr.shape}")
+    if image_arr.size == 0:
+        raise ValueError("detector image and dark must not be empty")
     if not np.all(np.isfinite(image_arr)):
         raise ValueError("detector image contains non-finite values")
     if not np.all(np.isfinite(dark_arr)):

@@ -77,6 +77,8 @@ def propagate_absolute_uncertainty(
     intensity_arr = np.asarray(intensity, dtype=np.float64)
     if intensity_arr.ndim == 0:
         intensity_arr = intensity_arr.reshape(1)
+    if intensity_arr.size == 0:
+        raise ValueError("intensity must not be empty")
     if not np.all(np.isfinite(intensity_arr)):
         raise ValueError("intensity must contain only finite values")
     shape = intensity_arr.shape

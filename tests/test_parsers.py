@@ -46,6 +46,10 @@ def test_q_unit_canonicalization_rejects_bare_or_signless_lengths(raw_unit):
         ("nm-1", "nm^-1"),
         ("nm - 1", "nm^-1"),
         ("1/nm", "nm^-1"),
+        ("1/m", "m^-1"),
+        ("m^-1", "m^-1"),
+        ("m - 1", "m^-1"),
+        ("inverse m", "m^-1"),
         ("inverse angstrom", "A^-1"),
         ("inv nm", "nm^-1"),
         ("invangstrom", "A^-1"),
@@ -834,6 +838,27 @@ def test_read_external_1d_profile_keeps_position_fallback_for_numeric_file(
 
     np.testing.assert_allclose(out["x"], [0.01, 0.02, 0.03])
     np.testing.assert_allclose(out["intensity"], [10.0, 9.0, 8.0])
+
+
+@pytest.mark.parametrize("nonfinite_token", ["NaN", "Inf"])
+def test_read_external_1d_profile_accepts_nonfinite_token_in_headerless_first_row(
+    tmp_path: Path,
+    nonfinite_token: str,
+):
+    f = tmp_path / "headerless_nonfinite_third_column.dat"
+    f.write_text(
+        f"0.10 10 {nonfinite_token}\n"
+        "0.20 20 200\n"
+        "0.30 30 300\n",
+        encoding="utf-8",
+    )
+
+    out = read_external_1d_profile(f)
+
+    np.testing.assert_allclose(out["x"], [0.10, 0.20, 0.30])
+    np.testing.assert_allclose(out["intensity"], [10.0, 20.0, 30.0])
+    assert out["err_col"] == ""
+    assert np.all(np.isnan(out["uncertainty"]))
 
 
 def test_read_external_1d_profile_unnamed_third_column_not_treated_as_error(tmp_path: Path):

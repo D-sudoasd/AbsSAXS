@@ -68,11 +68,18 @@
   control and both Tab 2/Tab 3 existence-only resume controls are UI-disabled;
   forced values make Dry Check BLOCKED and are rejected again at Run. K and μ
   are read-only in Tab 2, and K is read-only in Tab 3.
-- Workbench file identities currently bind resolved path, size, and mtime, not a
-  content SHA-256 for every selected source. `CAUTION` currently permits Run
-  without a separately persisted acknowledgement; these are deliberate open
-  boundaries, not properties of the strict runners. BG/Dark reference-library
-  mutations explicitly invalidate the in-memory Tab 2 approval.
+- Workbench identities bind resolved path, size, mtime, and a streaming SHA-256
+  for selected queue files and currently active configured inputs. A disabled
+  optional field may retain a stale raw path, but its identity is normalized as
+  disabled: it is not hashed and does not block Run. When that input is enabled,
+  a missing, unreadable, or changing file is unverified and blocks Run; replacing
+  content at the same path with the same size/mtime changes the preflight
+  fingerprint. Changing a switch or configuration still invalidates approval;
+  language refresh only redraws display text and retains current Tab 2/Tab 3
+  approvals. `CAUTION` currently permits Run without a separately persisted
+  acknowledgement; these are deliberate open boundaries, not properties of the
+  strict runners. BG/Dark reference-library mutations explicitly invalidate the
+  in-memory Tab 2 approval.
 - Tab 3 raw correction is disabled. Formal K/Kd accepts only an explicitly
   reduced `relative` profile; `raw_counts`, `absolute_cm^-1`, and `ambiguous`
   states fail closed. K/d requires `d > 0`; K-only applies K without repeating
@@ -149,7 +156,8 @@
 - **Implemented**: normalization, header parsing, external 1D parsing, robust K
   estimation, NIST 30 keV material core, Elam diagnostic calculator, 1D
   intensity ledger, signed-in-memory Workbench preflight, fixed-thickness
-  enforcement, disabled legacy/resume controls, exact K-only/Kd/buffer gates,
+  enforcement, content-aware source identities, disabled legacy/resume controls,
+  exact K-only/Kd/buffer gates,
   absolute-buffer validation, optional absolute 1D fluorescence subtraction,
   provenance-aware scrollable μ UI, disabled Tab 3 raw mode, screen-aware
   startup, strict BL19B2 workflows, standard writers, bilingual GUI, CLI, CI,
@@ -164,7 +172,9 @@
   is disabled rather than treated as safe.
 - **Desktop operation**: long GUI jobs run on the Tk event thread and are not
   cancellable. Users should prefer headless workflows for unattended or large
-  campaigns. `CAUTION` remains visible but is not separately persisted as an
+  campaigns. Tab 2/Tab 3 progress resets at job entry and is marked failed on
+  an outer run error, but whole-job atomic publication is not implemented.
+  `CAUTION` remains visible but is not separately persisted as an
   acknowledgement.
 - **Input resources**: Workbench and headless detector readers share
   `saxsabs.io.detector_images`. Reviewers should still use the documented

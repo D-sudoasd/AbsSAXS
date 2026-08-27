@@ -2,6 +2,19 @@
 
 ## [2.0.0] - Unreleased
 
+### Release-readiness hardening (2026-08-27)
+
+- Harden the Workbench preflight boundary with content-aware input identities,
+  language-only display refreshes, localized empty-queue/completion messages,
+  and stale-progress reset on failed Tab 2/3 runs. Update the release-readiness
+  snapshot and operator documentation; this remains an unreleased source
+  candidate.
+- Harden structured canSAS/NXcanSAS Q-axis handling to fail closed on missing
+  or unknown units, and canonicalize `1/m` to Å⁻¹. Detect NaN/Inf in headerless
+  profiles, publish canSAS XML atomically, handle Pydidas numeric tokens and
+  inline comments, and reject empty arrays in the scientific core. These are
+  engineering safeguards, not measured scientific acceptance.
+
 ### Fluorescence subtraction (1D)
 
 - Add an opt-in absolute-scale fluorescence kernel

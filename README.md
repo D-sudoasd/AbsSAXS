@@ -20,11 +20,15 @@
 reusable data writers, and provenance checks. The result and the processing
 record remain reviewable together.
 
-Reviewers should use the unreleased 2.0.0 tree on
-[`main`](https://github.com/D-sudoasd/SASAbs). GitHub Release
-[v1.1.1](https://github.com/D-sudoasd/SASAbs/releases/tag/v1.1.1) is an earlier
-archive and is not this candidate. Do not treat the Zenodo concept DOI as a
-version DOI for 2.0.0.
+Version status:
+
+- Current source candidate: branch [`main`](https://github.com/D-sudoasd/SASAbs),
+  version `2.0.0`, unreleased.
+- Stable archive: GitHub Release
+  [`v1.1.1`](https://github.com/D-sudoasd/SASAbs/releases/tag/v1.1.1) release assets.
+- The `2.0.0` candidate is source-only: no PyPI installation is documented, and
+  no version tag, GitHub Release, or Zenodo version archive has been created.
+  The DOI above is the project concept DOI.
 
 <p align="center">
   <a href="#quick-start"><strong>Quick start</strong></a> ·
@@ -55,8 +59,11 @@ python -m pip install -e ".[gui]"
 saxsabs-workbench --lang en
 ```
 
-The core package requires Python 3.10+, NumPy, pandas, and xraydb. The project
-does not currently document a PyPI installation.
+On Windows, `py -m pip install -e ".[gui]"` and `py saxsabs_workbench.py --lang en`
+are equivalent Python-launcher forms.
+
+The core package requires Python 3.10+, NumPy, pandas, and xraydb. The commands
+above install from the source tree.
 
 <details>
 <summary><strong>Optional dependency groups</strong></summary>
@@ -189,9 +196,10 @@ python scripts/check_submission_readiness.py \
 ```
 
 Run the strict command from the exact branch and commit that will be submitted.
-PR #1 is already on `main`. A PASS recorded on an earlier revision does not
-cover a later commit; update `submitted_branch` and `submitted_commit` and rerun
-the gate on the revision sent to JOSS.
+The submitted branch and 40-character SHA must identify the same revision as the
+public README and paper blobs and the successful CI run. A PASS recorded for an
+earlier revision does not cover a later commit; update `submitted_branch` and
+`submitted_commit` and rerun both gates.
 
 After the strict local gate passes, verify the same commit, branch, visible
 README and paper, repository identity, and successful CI run against GitHub:

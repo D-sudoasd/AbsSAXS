@@ -87,6 +87,8 @@ def _as_1d_float_array(
     arr = np.asarray(values, dtype=np.float64)
     if arr.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array")
+    if arr.size == 0:
+        raise ValueError(f"{name} must not be empty")
     if require_finite and not np.all(np.isfinite(arr)):
         raise ValueError(f"{name} contains non-finite values")
     return arr

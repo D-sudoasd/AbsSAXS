@@ -39,6 +39,31 @@ from saxsabs.core.intensity_state import (
 
 FLOAT_PATTERN = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 COMMA_THOUSANDS_PATTERN = re.compile(r"(?<!\d)[-+]?\d{1,3}(?:,\d{3})+(?:[eE][-+]?\d+)?(?!\d)")
+_NONFINITE_NUMERIC_MARKERS = frozenset(
+    {
+        "nan",
+        "+nan",
+        "-nan",
+        "inf",
+        "+inf",
+        "-inf",
+        "infinity",
+        "+infinity",
+        "-infinity",
+    }
+)
+
+
+def _is_numeric_syntax_token(value: object) -> bool:
+    """Return whether a text token is numeric syntax for header detection.
+
+    Explicit non-finite spellings are accepted here only to distinguish a
+    headerless numeric first row from a textual header.  Downstream numeric
+    parsing still applies its finite-value and uncertainty rules.
+    """
+
+    token = str(value).strip().lower()
+    return FLOAT_PATTERN.fullmatch(token) is not None or token in _NONFINITE_NUMERIC_MARKERS
 
 
 _SUPERSCRIPT_TRANSLATION = str.maketrans(
@@ -210,7 +235,7 @@ def canonicalize_q_unit(value: object) -> str | None:
             return None
         text = text[1:-1].strip()
 
-    unit = r"(?:a|angstrom|nm)"
+    unit = r"(?:a|angstrom|nm|m)"
     if re.fullmatch(rf"1\s*/\s*({unit})", text):
         matched_unit = re.fullmatch(rf"1\s*/\s*({unit})", text)
     else:
@@ -223,7 +248,12 @@ def canonicalize_q_unit(value: object) -> str | None:
     if matched_unit is None:
         return None
 
-    return "nm^-1" if matched_unit.group(1) == "nm" else "A^-1"
+    matched_name = matched_unit.group(1)
+    if matched_name == "nm":
+        return "nm^-1"
+    if matched_name == "m":
+        return "m^-1"
+    return "A^-1"
 
 
 def _unit_delimiters_are_balanced(text: str) -> bool:
@@ -260,7 +290,7 @@ def q_axis_kind(name: object) -> str:
     if re.fullmatch(r"q", text, flags=re.IGNORECASE):
         return "q"
     if re.fullmatch(
-        r"q(?:a|angstrom|nm)(?:\s*\^?\s*-\s*1)",
+        r"q(?:a|angstrom|nm|m)(?:\s*\^?\s*-\s*1)",
         text,
         flags=re.IGNORECASE,
     ):
@@ -664,15 +694,7 @@ def _physical_data_width(path: str | Path) -> int:
         break
     if first_data_index is None:
         return 0
-    numeric_markers = {
-        "nan", "+nan", "-nan", "inf", "+inf", "-inf",
-        "infinity", "+infinity", "-infinity",
-    }
-    first_is_numeric = all(
-        FLOAT_PATTERN.fullmatch(token) is not None
-        or token.strip().lower() in numeric_markers
-        for token in first_tokens
-    )
+    first_is_numeric = all(_is_numeric_syntax_token(token) for token in first_tokens)
     data_lines = lines[first_data_index:] if first_is_numeric else lines[first_data_index + 1 :]
     return _physical_width_from_data_lines(data_lines)
 
@@ -691,7 +713,9 @@ def _read_plain_header_tokens(path: str | Path) -> list[str] | None:
         if stripped.startswith("#"):
             continue
         tokens = _tokenize_header_line(stripped)
-        if len(tokens) >= 2 and any(FLOAT_PATTERN.fullmatch(token) is None for token in tokens):
+        if len(tokens) >= 2 and any(
+            not _is_numeric_syntax_token(token) for token in tokens
+        ):
             return tokens
         return None
     return None
@@ -1128,13 +1152,7 @@ def read_external_1d_profile(
                     isinstance(column, (int, np.integer)) for column in df.columns
                 )
                 if position_columns:
-                    if has_comment_header:
-                        continue
-                    first_row = df.iloc[0]
-                    non_numeric_header_tokens = int(
-                        pd.to_numeric(first_row, errors="coerce").isna().sum()
-                    )
-                    if non_numeric_header_tokens >= 1:
+                    if has_comment_header or plain_header_tokens is not None:
                         continue
             if df is not None and "header" not in kw:
                 header_for_malformed_check = (
@@ -1433,6 +1451,10 @@ def read_cansas1d_xml(path: str | Path) -> dict[str, Any]:
     )
 
     canonical_by_point = [canonical for _, canonical in q_unit_records]
+    if any(not raw for raw, _ in q_unit_records):
+        raise ValueError(f"canSAS XML Q unit is required: {p.name}")
+    if any(canonical is None for _, canonical in q_unit_records):
+        raise ValueError(f"canSAS XML contains unsupported Q unit: {p.name}")
     known_q_units = {unit for unit in canonical_by_point if unit is not None}
     raw_q_unit_tokens = {_unit_token(raw) for raw, _ in q_unit_records}
     # Canonically equivalent spellings (1/A and 1/angstrom) are consistent;
@@ -1501,9 +1523,11 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
         i_dev_unit = ""
         q_unit: str | None = None
         q_unit_raw = ""
+        q_unit_declared = False
 
         def _find_sasdata(group: Any) -> bool:
-            nonlocal q_ds, i_ds, e_ds, intensity_unit, i_dev_unit, q_unit, q_unit_raw
+            nonlocal q_ds, i_ds, e_ds, intensity_unit, i_dev_unit
+            nonlocal q_unit, q_unit_raw, q_unit_declared
             cls = group.attrs.get("canSAS_class", "")
             if isinstance(cls, bytes):
                 cls = cls.decode()
@@ -1516,6 +1540,7 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
                     )
                     if isinstance(raw_q_unit, bytes):
                         raw_q_unit = raw_q_unit.decode("utf-8", errors="replace")
+                    q_unit_declared = bool(str(raw_q_unit or "").strip())
                     q_unit = canonicalize_q_unit(raw_q_unit)
                     q_unit_raw = str(raw_q_unit or "") if q_unit is None else ""
                     raw_unit = group["I"].attrs.get("units", "")
@@ -1563,6 +1588,10 @@ def read_nxcansas_h5(path: str | Path) -> dict[str, Any]:
                 operator_provenance[key] = value.strip()
 
         f.visititems(_collect_operator_provenance)
+    if not q_unit_declared:
+        raise ValueError(f"NXcanSAS Q unit is required: {p.name}")
+    if q_unit_raw:
+        raise ValueError(f"NXcanSAS contains unsupported Q unit: {p.name}")
     if q_ds is None or i_ds is None:
         raise ValueError(f"Cannot find SASdata/Q,I datasets in {p.name}")
 

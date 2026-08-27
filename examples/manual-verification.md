@@ -14,7 +14,7 @@ cannot be fully public.
 1. Install package:
 
    ```bash
-   pip install -e .[dev,hdf5]
+   pip install -e ".[dev,hdf5]"
    ```
 
 2. Run tests:
@@ -104,12 +104,23 @@ front end to the strict BL19B2 campaign runner.
    one tracked scientific parameter or source path and confirm Run immediately
    disables. Add BG/Dark files, add either library recursively, and clear the
    libraries; every mutation must immediately invalidate Tab 2 approval. Run
-   must also reject a stale approval if a file's recorded size or modification
-   time changes after Dry Check.
+   must also reject a stale approval if a selected queue file or currently active
+   configured input's content, size, or modification time changes after Dry
+   Check. Replace a fixture with different bytes while preserving its size and
+   mtime to verify the streaming SHA-256 catches the replacement. Missing,
+   unreadable, or changing-while-read active files must fail closed rather than
+   become valid identities. Leave a stale missing path in a disabled optional
+   buffer/fluorescence field and confirm it does not block; then enable that
+   option without changing the path and confirm the active identity blocks Run.
+   Changing a switch or configuration must invalidate approval. Toggle the UI
+   language and confirm the approval remains current; this display-only action
+   must not invalidate Tab 2/Tab 3 preflight.
 5. Repeat with BLOCKED fixtures and confirm Run remains disabled. Include Tab 3
    K/d with blank, non-finite, zero, and negative thickness. Record that a
    CAUTION result currently permits Run without a separately persisted
-   acknowledgement; this remains an open release gate.
+   acknowledgement; this remains an open release gate. Set a prior progress bar
+   to 100%, trigger a preflight failure at each Run entry, and confirm the bar
+   returns to 0 with a visible failed-job status.
 6. In the material calculator, select the NIST 30 keV source and verify:
 
    - Ti-24Nb-4Zr-8Sn: `74.550355 cm^-1`
@@ -202,13 +213,18 @@ These capabilities are outside the current Workbench support contract. They are
 not claimed by the README or paper; use the strict headless workflow where
 applicable:
 
-- formal multi-folder/per-sample fixed-thickness campaigns have a Workbench
-  owner equivalent to the strict CLI/batch campaign;
-- Workbench and strict BL19B2 runner use one shared scientific kernel;
-- Workbench output root has an owner manifest, atomic campaign publication, and
-  content-signature resume (existence-only resume must remain disabled);
-- Workbench preflight binds critical file content hashes and persists explicit
-  CAUTION acceptance;
+- formal multi-folder/per-sample fixed-thickness campaigns do not have a
+  Workbench owner equivalent to the strict CLI/batch campaign;
+- Workbench and strict BL19B2 runner do not use one shared campaign-level
+  scientific kernel;
+- Workbench output root does not have an owner manifest, atomic campaign
+  publication, or content-signature resume (existence-only resume must remain
+  disabled);
+- Workbench preflight binds SHA-256 content identities for selected queue files
+  and currently active configured inputs. Disabled optional fields may retain a
+  stale path without hashing or blocking; enabling them makes missing,
+  unreadable, or changing inputs fail closed. Configuration changes still
+  invalidate approval, and explicit CAUTION acceptance is not persisted;
 - all FabIO readers pass OS-level handle audits on every Windows workstation
   (unit tests now cover the shared copy-and-close helper; a full desktop
   handle audit remains a local check);

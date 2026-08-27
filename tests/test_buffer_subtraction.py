@@ -319,3 +319,15 @@ def test_subtract_buffer_refuses_unlabeled_profiles():
     q = np.array([0.01, 0.02, 0.03])
     with pytest.raises(ValueError, match="sample_profile and buffer_profile"):
         subtract_buffer(q, np.ones(3), np.ones(3), q, np.ones(3), np.ones(3))
+
+
+def test_subtract_buffer_rejects_empty_public_arrays():
+    with pytest.raises(ValueError, match="empty"):
+        _sub(
+            np.array([]),
+            np.array([]),
+            np.array([]),
+            np.array([]),
+            np.array([]),
+            np.array([]),
+        )
