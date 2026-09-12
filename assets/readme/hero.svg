@@ -1,41 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
-  <title id="title">SASAbs traceable absolute-intensity calibration</title>
-  <desc id="desc">Detector signal and reference intensity pass through robust K-factor estimation to an absolute SAXS profile with units and provenance.</desc>
+  <title id="title">saxsabs absolute-intensity calibration for SAXS</title>
+  <desc id="desc">saxsabs estimates the calibration factor K from a measured SAXS profile and a reference, then writes absolute I(q) in inverse centimetres together with intensity state and physical inputs.</desc>
   <rect width="1200" height="360" rx="22" fill="#071218"/>
   <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
-    <g transform="translate(58 48)">
-      <text x="0" y="0" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" letter-spacing="2.4">SAXS ABSOLUTE-INTENSITY CALIBRATION</text>
-      <text x="0" y="72" fill="#F5F7F8" font-size="46" font-weight="720">A calibration record</text>
-      <text x="0" y="126" fill="#F5F7F8" font-size="46" font-weight="720">you can inspect.</text>
-      <text x="0" y="176" fill="#B9C6CF" font-size="22">Robust K estimation, explicit intensity states,</text>
-      <text x="0" y="208" fill="#B9C6CF" font-size="22">portable outputs, and reviewable provenance.</text>
-      <path d="M0 250H520" stroke="#2A3A45"/>
-      <text x="0" y="282" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18">CLI  ·  PYTHON API  ·  DESKTOP WORKBENCH</text>
+    <g transform="translate(56 46)">
+      <text x="0" y="0" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" letter-spacing="1.8">SMALL-ANGLE X-RAY SCATTERING</text>
+      <text x="0" y="70" fill="#F5F7F8" font-size="52" font-weight="700">saxsabs</text>
+      <text x="0" y="122" fill="#B9C6CF" font-size="20">Estimate K from NIST SRM 3600, water,</text>
+      <text x="0" y="150" fill="#B9C6CF" font-size="20">or a user reference, then write I(q) in</text>
+      <text x="0" y="178" fill="#B9C6CF" font-size="20">cm⁻¹ with the calibration inputs.</text>
+      <path d="M0 220H500" stroke="#2A3A45"/>
+      <text x="0" y="254" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18">CLI  ·  PYTHON API  ·  WORKBENCH</text>
     </g>
 
-    <g transform="translate(650 42)">
-      <path d="M0 0H492M0 276H492" stroke="#2A3A45"/>
-      <text x="0" y="26" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" letter-spacing="1.6">CALIBRATION PATH</text>
+    <g transform="translate(640 40)">
+      <path d="M0 0H500M0 280H500" stroke="#2A3A45"/>
+      <text x="0" y="24" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" letter-spacing="1.4">CALIBRATION PATH</text>
 
-      <g transform="translate(0 55)">
-        <path d="M0 122H492M0 16V122" stroke="#2A3A45" stroke-width="1.5"/>
-        <path d="M8 96C49 88 83 76 117 60C154 43 190 36 230 31C271 26 311 23 350 21C394 18 434 16 484 13" fill="none" stroke="#D38A3B" stroke-width="4"/>
-        <path d="M8 103C47 91 82 80 117 63C153 47 191 39 231 34C270 29 310 26 350 23C393 20 434 18 484 16" fill="none" stroke="#5CA7D1" stroke-width="3" stroke-dasharray="7 7"/>
-        <circle cx="58" cy="85" r="4" fill="#5CA7D1"/><circle cx="117" cy="63" r="4" fill="#5CA7D1"/><circle cx="191" cy="39" r="4" fill="#5CA7D1"/><circle cx="270" cy="29" r="4" fill="#5CA7D1"/><circle cx="350" cy="23" r="4" fill="#5CA7D1"/><circle cx="434" cy="18" r="4" fill="#5CA7D1"/>
-        <text x="0" y="151" fill="#86A0B2" font-size="18">detector signal</text>
-        <text x="365" y="151" fill="#86A0B2" font-size="18">reference I(q)</text>
+      <g transform="translate(0 48)">
+        <path d="M0 128H500M0 12V128" stroke="#2A3A45" stroke-width="1.5"/>
+        <path d="M10 28C52 34 88 44 124 58C162 76 200 88 242 98C284 106 326 112 366 116C410 120 452 122 490 124" fill="none" stroke="#D38A3B" stroke-width="4"/>
+        <path d="M10 36C50 42 86 52 124 66C160 84 200 96 242 106C282 114 324 118 366 122C408 124 450 126 490 127" fill="none" stroke="#5CA7D1" stroke-width="3" stroke-dasharray="7 7"/>
+        <circle cx="62" cy="48" r="4" fill="#5CA7D1"/>
+        <circle cx="124" cy="66" r="4" fill="#5CA7D1"/>
+        <circle cx="200" cy="96" r="4" fill="#5CA7D1"/>
+        <circle cx="282" cy="112" r="4" fill="#5CA7D1"/>
+        <circle cx="366" cy="118" r="4" fill="#5CA7D1"/>
+        <circle cx="452" cy="122" r="4" fill="#5CA7D1"/>
+        <text x="0" y="158" fill="#86A0B2" font-size="18">measured I(q)</text>
+        <text x="352" y="158" fill="#86A0B2" font-size="18">reference I(q)</text>
       </g>
 
-      <g transform="translate(0 231)">
-        <circle cx="10" cy="4" r="5" fill="#5CA7D1"/>
-        <text x="26" y="11" fill="#F5F7F8" font-size="20" font-weight="650">robust K</text>
-        <path d="M122 4H170" stroke="#506473" stroke-width="2"/>
-        <path d="M160 -3L171 4L160 11" fill="none" stroke="#506473" stroke-width="2"/>
-        <text x="190" y="11" fill="#F5F7F8" font-size="20" font-weight="650">absolute I(q)</text>
-        <path d="M318 4H358" stroke="#506473" stroke-width="2"/>
-        <path d="M348 -3L359 4L348 11" fill="none" stroke="#506473" stroke-width="2"/>
-        <circle cx="379" cy="4" r="5" fill="#69B594"/>
-        <text x="395" y="11" fill="#F5F7F8" font-size="20" font-weight="650">provenance</text>
+      <g transform="translate(0 236)">
+        <circle cx="8" cy="4" r="5" fill="#5CA7D1"/>
+        <text x="22" y="10" fill="#F5F7F8" font-size="20" font-weight="650">K</text>
+        <path d="M56 4H108" stroke="#506473" stroke-width="2"/>
+        <path d="M98 -3L109 4L98 11" fill="none" stroke="#506473" stroke-width="2"/>
+        <text x="122" y="10" fill="#F5F7F8" font-size="20" font-weight="650">I(q) / cm⁻¹</text>
+        <path d="M260 4H312" stroke="#506473" stroke-width="2"/>
+        <path d="M302 -3L313 4L302 11" fill="none" stroke="#506473" stroke-width="2"/>
+        <circle cx="332" cy="4" r="5" fill="#69B594"/>
+        <text x="346" y="10" fill="#F5F7F8" font-size="20" font-weight="650">export</text>
       </g>
     </g>
   </g>

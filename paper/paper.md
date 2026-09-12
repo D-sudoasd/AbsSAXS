@@ -9,16 +9,15 @@ tags:
 authors:
   - name: Delun Gong
     orcid: 0000-0001-7877-7707
+    email: dlgong@imr.ac.cn
+    corresponding: true
     affiliation: '1'
 affiliations:
   - index: 1
     name: Institute of Metal Research, Chinese Academy of Sciences, Shenyang 110016, China
-date: 26 August 2026
+date: 12 September 2026
 bibliography: paper.bib
 ---
-
-<!-- [作者需补充] Author input required for the final author list and order, corresponding author,
-current email, affiliation, ORCID, and contribution roles before submission. -->
 
 # Summary
 
@@ -159,35 +158,34 @@ The repository configures continuous integration for Python 3.10--3.13 on Linux,
 Windows, and macOS.
 
 The tests and synthetic example verify implemented calculations, interfaces,
-metadata handling, and output generation. They do not establish research impact.
-<!-- [作者需补充] -->
-[Author input required before submission: a verifiable use case that identifies the
-research question, software version, inputs, outputs, and the role of `saxsabs`,
-with a public result or material that can be shown to the editors.]
+metadata handling, and output generation. They do not by themselves establish
+research impact. The author uses `saxsabs` as the absolute-intensity step in
+SAXS studies of metallic materials, including published work at SPring-8
+BL19B2 [@gong2026acta] and subsequent beamtime on the same line. Detector
+images and reduced 1D profiles are converted to cm$^{-1}$ with recorded $K$,
+thickness, transmission, and intensity state; those absolute profiles are the
+intensities used in the materials analysis. Beamline-private raw frames are
+not in this repository.
 
 # AI usage disclosure
 
 GitHub Copilot, Anthropic Claude, and OpenAI Codex assisted with code
 refactoring, internationalization, test scaffolding, documentation, repository
-review, figure generation, and manuscript editing. The versions of some earlier
-tools were not retained. The author checked AI-assisted changes against source
-code, automated test outputs, and cited primary sources and remains responsible
-for the software, manuscript, scientific interpretation, and submission
-decisions. <!-- [作者需补充] -->
-[Author input required before submission: the exact recoverable product,
-model, and version for each tool, together with confirmation of the final human
-review.]
+review, figure generation, and manuscript editing. Exact versions of some
+earlier tools were not retained. The author reviewed, edited, and validated
+AI-assisted output against source code, automated tests, and cited primary
+sources; made the scientific, architectural, and design decisions; and is
+responsible for the software, manuscript, and submission.
 
 # Author contributions
 
-<!-- [作者需补充] -->
-[Author input required before submission: contribution roles for every author,
-preferably using the CRediT taxonomy and confirmed by all authors.]
+Delun Gong: Conceptualization, Data curation, Investigation, Methodology,
+Project administration, Resources, Software, Validation, Visualization,
+Writing - original draft, and Writing - review and editing.
 
 # Acknowledgements
 
-<!-- [作者需补充] -->
-[Author input required before submission: the truthful funding, sponsor-role,
-acknowledgement, and competing-interest statements.]
+No external funding was received for this software. The sponsor role is
+therefore not applicable. The author declares no competing interests.
 
 # References

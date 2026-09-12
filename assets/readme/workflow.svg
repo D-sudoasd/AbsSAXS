@@ -1,39 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="250" viewBox="0 0 1200 250" role="img" aria-labelledby="title desc">
-  <title id="title">SASAbs entry points and shared processing core</title>
-  <desc id="desc">CLI utilities, desktop Workbench, strict BL19B2 runner, and Python API connect to shared scientific and input-output modules before producing reviewable absolute-intensity outputs.</desc>
-  <rect width="1200" height="250" rx="22" fill="#071218"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+  <title id="title">saxsabs entry points and shared processing core</title>
+  <desc id="desc">CLI utilities, the desktop Workbench, the strict BL19B2 runner, and the Python API share calibration, I/O, and intensity-state checks before writing absolute I(q), canSAS1d XML, and optional NXcanSAS HDF5.</desc>
+  <rect width="1200" height="280" rx="22" fill="#071218"/>
   <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
-    <text x="54" y="42" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" letter-spacing="2">ENTRY POINTS</text>
-    <path d="M54 58H1146" stroke="#2A3A45"/>
+    <text x="48" y="40" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" letter-spacing="2">ENTRY POINTS</text>
+    <path d="M48 56H1152" stroke="#2A3A45"/>
 
-    <g fill="#F5F7F8" font-size="21" font-weight="650">
-      <text x="54" y="94">CLI utilities</text>
-      <text x="278" y="94">Workbench</text>
-      <text x="500" y="94">BL19B2 runner</text>
-      <text x="760" y="94">Python API</text>
+    <g fill="#102028" stroke="#2A3A45">
+      <rect x="48" y="72" width="261" height="88" rx="12"/>
+      <rect x="329" y="72" width="261" height="88" rx="12"/>
+      <rect x="610" y="72" width="261" height="88" rx="12"/>
+      <rect x="891" y="72" width="261" height="88" rx="12"/>
+    </g>
+    <g fill="#F5F7F8" font-size="22" font-weight="650">
+      <text x="178" y="110" text-anchor="middle">CLI utilities</text>
+      <text x="459" y="110" text-anchor="middle">Workbench</text>
+      <text x="740" y="110" text-anchor="middle">BL19B2 runner</text>
+      <text x="1021" y="110" text-anchor="middle">Python API</text>
     </g>
     <g fill="#86A0B2" font-size="18">
-      <text x="54" y="122">focused commands</text>
-      <text x="278" y="122">interactive routes</text>
-      <text x="500" y="122">strict campaign path</text>
-      <text x="760" y="122">reusable functions</text>
+      <text x="178" y="138" text-anchor="middle">commands</text>
+      <text x="459" y="138" text-anchor="middle">interactive routes</text>
+      <text x="740" y="138" text-anchor="middle">strict campaign path</text>
+      <text x="1021" y="138" text-anchor="middle">package functions</text>
     </g>
 
     <g stroke="#506473" stroke-width="2" fill="none">
-      <path d="M132 137V169H924"/>
-      <path d="M356 137V169"/>
-      <path d="M584 137V169"/>
-      <path d="M826 137V169"/>
+      <path d="M178 160V184"/>
+      <path d="M459 160V184"/>
+      <path d="M740 160V184"/>
+      <path d="M1021 160V184"/>
+      <path d="M178 184H1021"/>
     </g>
-    <circle cx="132" cy="169" r="4" fill="#5CA7D1"/><circle cx="356" cy="169" r="4" fill="#5CA7D1"/><circle cx="584" cy="169" r="4" fill="#5CA7D1"/><circle cx="826" cy="169" r="4" fill="#5CA7D1"/>
+    <circle cx="178" cy="184" r="4" fill="#5CA7D1"/>
+    <circle cx="459" cy="184" r="4" fill="#5CA7D1"/>
+    <circle cx="740" cy="184" r="4" fill="#5CA7D1"/>
+    <circle cx="1021" cy="184" r="4" fill="#5CA7D1"/>
 
-    <path d="M54 194H930" stroke="#5CA7D1" stroke-width="3"/>
-    <text x="54" y="226" fill="#B9C6CF" font-size="20">shared scientific core  ·  typed I/O  ·  provenance checks</text>
-    <path d="M930 194H976" stroke="#506473" stroke-width="2.5"/>
-    <path d="M965 186L978 194L965 202" fill="none" stroke="#506473" stroke-width="2.5"/>
-
-    <rect x="992" y="151" width="154" height="86" rx="10" fill="#10241D" stroke="#69B594"/>
-    <text x="1069" y="184" text-anchor="middle" fill="#86A0B2" font-size="18">reviewable</text>
-    <text x="1069" y="214" text-anchor="middle" fill="#F5F7F8" font-size="21" font-weight="700">absolute output</text>
+    <path d="M48 210H1152" stroke="#5CA7D1" stroke-width="3"/>
+    <text x="600" y="240" text-anchor="middle" fill="#B9C6CF" font-size="20">shared core: K estimation, intensity state, typed I/O</text>
+    <text x="600" y="266" text-anchor="middle" fill="#F5F7F8" font-size="20" font-weight="650">absolute I(q)  ·  canSAS1d XML  ·  NXcanSAS HDF5</text>
   </g>
 </svg>

@@ -5,8 +5,8 @@ evidence.
 
 | Asset | Source and regeneration |
 | --- | --- |
-| `hero.svg` | Hand-authored calibration sequence derived from the package interfaces and SAXS-profile motif; it contains no measured data. |
-| `workflow.svg` | Hand-authored entry-point map for CLI utilities, Workbench, strict BL19B2, and Python API; the adjacent README table is authoritative. |
+| `hero.svg` | Hand-authored SAXS calibration-path diagram (measured I(q), reference I(q), K, absolute export); it contains no measured data. |
+| `workflow.svg` | Hand-authored entry-point map for CLI utilities, Workbench, strict BL19B2, and Python API, with shared-core and output labels; the adjacent README table is authoritative. |
 | `workbench.png` | Curated copy of `paper/fig_gui.png`, captured from the current source tree with `python paper/capture_gui_screenshot.py`. |
 | `kfactor-demo.png` | Curated copy of `paper/fig_kfactor_demo.png`, generated deterministically with `python paper/generate_figures.py --demo`; it is synthetic and not beamline validation. |
 
