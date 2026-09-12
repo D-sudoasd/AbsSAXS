@@ -15,7 +15,7 @@ authors:
 affiliations:
   - index: 1
     name: Institute of Metal Research, Chinese Academy of Sciences, Shenyang 110016, China
-date: 12 September 2026
+date: 13 September 2026
 bibliography: paper.bib
 ---
 
@@ -159,23 +159,25 @@ Windows, and macOS.
 
 The tests and synthetic example verify implemented calculations, interfaces,
 metadata handling, and output generation. They do not by themselves establish
-research impact. The author uses `saxsabs` as the absolute-intensity step in
-SAXS studies of metallic materials, including published work at SPring-8
-BL19B2 [@gong2026acta] and subsequent beamtime on the same line. Detector
-images and reduced 1D profiles are converted to cm$^{-1}$ with recorded $K$,
-thickness, transmission, and intensity state; those absolute profiles are the
-intensities used in the materials analysis. Beamline-private raw frames are
-not in this repository.
+research impact. The author uses `saxsabs` as the absolute-intensity step for
+SAXS measurements of metallic materials at SPring-8 BL19B2, including the
+SAXS/USAXS campaign reported in Gong et al. [@gong2026acta] and subsequent
+beamtime on the same line. Detector images and reduced 1D profiles are
+converted to cm$^{-1}$ with recorded $K$, thickness, transmission, and
+intensity state; those absolute profiles are the intensities used in the
+materials analysis. That article does not cite `saxsabs`. Beamline-private
+raw frames are not in this repository; the author can provide editor-visible
+processing records.
 
 # AI usage disclosure
 
-GitHub Copilot, Anthropic Claude, and OpenAI Codex assisted with code
-refactoring, internationalization, test scaffolding, documentation, repository
-review, figure generation, and manuscript editing. Exact versions of some
-earlier tools were not retained. The author reviewed, edited, and validated
-AI-assisted output against source code, automated tests, and cited primary
-sources; made the scientific, architectural, and design decisions; and is
-responsible for the software, manuscript, and submission.
+GitHub Copilot, Anthropic Claude, OpenAI Codex, and xAI Grok assisted with
+code refactoring, internationalization, test scaffolding, documentation,
+repository review, figure generation, and manuscript editing. Exact versions
+of some earlier tools were not retained. The author reviewed, edited, and
+validated AI-assisted output against source code, automated tests, and cited
+primary sources; made the scientific, architectural, and design decisions;
+and is responsible for the software, manuscript, and submission.
 
 # Author contributions
 

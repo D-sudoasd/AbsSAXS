@@ -1,6 +1,7 @@
 # Author confirmation form
 
-Completed from the corresponding author's statements on 12 September 2026.
+Completed from the corresponding author's statements; submission date
+13 September 2026.
 Use this record with `paper/paper.md`; do not infer undeclared facts.
 
 ## Authorship and correspondence
@@ -20,7 +21,7 @@ Use this record with `paper/paper.md`; do not infer undeclared facts.
 - Commands or interface used: saxsabs calibration and BL19B2 workflow
 - Outputs used in the research: absolute-scale profiles (cm⁻¹) with recorded K, thickness, transmission, and intensity state
 - How `saxsabs` affected the analysis: it is the absolute-intensity calibration step before materials interpretation
-- Public paper, preprint, data, workflow, or editor-visible evidence: Gong et al., Acta Materialia 316 (2026) 122455, doi:10.1016/j.actamat.2026.122455; subsequent BL19B2 beamtime (raw frames remain beamline-private)
+- Public paper, preprint, data, workflow, or editor-visible evidence: Gong et al., Acta Materialia 316 (2026) 122455, doi:10.1016/j.actamat.2026.122455, as the public SAXS/USAXS research context at BL19B2. That article does not cite saxsabs. Subsequent BL19B2 beamtime (raw frames remain beamline-private); editor-visible processing records on request.
 - Independent/external users or integrations, if any: none declared
 
 ## AI usage disclosure
@@ -34,6 +35,7 @@ author's review responsibility.
 | GitHub Copilot | version not retained | code, tests, docs | refactoring, scaffolding |
 | Anthropic Claude | version not retained | code, docs, paper | refactoring, documentation, editing |
 | OpenAI Codex | version not retained | code, docs, paper | refactoring, tests, documentation, editing |
+| xAI Grok | version not retained | docs, paper | homepage and manuscript editing |
 | Other | none declared | | |
 
 Confirm verbatim if true:
@@ -62,8 +64,8 @@ Confirm verbatim if true:
 
 ## Final checks
 
-- Actual submission date (`D Month YYYY`): 12 September 2026 (paper YAML; change if submitted later)
-- `paper.md` date updated to the actual submission date: yes, for 12 September 2026
+- Actual submission date (`D Month YYYY`): 13 September 2026
+- `paper.md` date updated to the actual submission date: yes, for 13 September 2026
 - Strict readiness command returns PASS: not yet (requires confirmation JSON, green CI on that HEAD, and Pandoc)
 - Confirmation JSON copied from `docs/submission-confirmations.example.json`,
   completed from evidence, and passed with `--manual-confirmations`: not yet
@@ -71,7 +73,7 @@ Confirm verbatim if true:
 - Commit SHA submitted to JOSS: not yet
 - Public repository description, homepage concept DOI, default branch or
   submitted branch, and visible README all match that commit: not yet
-- Confirmation date (`YYYY-MM-DD`, matching the paper submission date): 2026-09-12
+- Confirmation date (`YYYY-MM-DD`, matching the paper submission date): 2026-09-13
 - Research-evidence reference retained for editorial verification: doi:10.1016/j.actamat.2026.122455
 - Submitted branch recorded in the confirmation JSON: not yet
 - Confirmed commit is the current clean HEAD of that submitted branch: not yet

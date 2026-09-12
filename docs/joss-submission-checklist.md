@@ -12,16 +12,15 @@ v1.1.1.
 
 ## Pre-review screening gates
 
-- [ ] **More than six months of public development.** GitHub reports that this
-      repository was created on 25 February 2026. The first conservative
-      eligibility date is 26 August 2026; the author must still recheck the
-      public history on the actual submission date and keep this gate open until
-      that evidence is confirmed.
-- [ ] **Demonstrated research use.** The repository contains a concrete BL19B2
-      workflow and reproducible synthetic validation material, but the author
-      must supply evidence that the software has been used in research. Claims
-      of external adoption, publications, or operational benefit require direct
-      evidence.
+- [x] **More than six months of public development.** GitHub reports that this
+      repository was created on 25 February 2026. Planned submission is
+      13 September 2026, which is after the conservative eligibility date of
+      26 August 2026. Public releases, pull requests, and CI span that interval.
+- [x] **Demonstrated research use.** The author uses saxsabs as the
+      absolute-intensity step for SAXS/USAXS at SPring-8 BL19B2, including the
+      campaign reported in Gong et al., Acta Materialia 316 (2026) 122455.
+      That article does not cite saxsabs. Synthetic tests do not substitute for
+      this author-declared research workflow.
 - [x] **Good open-source practices.** The project has an OSI-approved license,
       packaging metadata, archived earlier releases, a changelog, tests, CI configuration, documentation,
       contribution guidance, support pathways, and issue/PR templates.
@@ -76,13 +75,18 @@ v1.1.1.
       bundled v2018.5 definitions; that check is not in CI. Current NeXus
       definitions and a third-party application consumer remain unverified
       because punx 0.3.5 cannot parse the current definition set.
-- [ ] The author confirms author order, affiliation, corresponding author,
+- [x] The author confirms author order, affiliation, corresponding author,
       acknowledgements, funding, conflicts of interest, and contribution roles.
-- [ ] The author confirms the complete AI disclosure and human review statement.
-- [ ] The author supplies research-use evidence suitable for the impact section.
+- [x] The author confirms the AI disclosure and human review statement in
+      `paper/paper.md` (Copilot, Claude, Codex, Grok; earlier versions not
+      retained).
+- [x] The author supplies research-use evidence suitable for the impact
+      section (author-declared BL19B2 workflow; Acta 2026 as public context,
+      not a software citation).
 - [ ] Measured beamline/scientific acceptance is archived with raw inputs,
-      repeatability, and an independent comparison; synthetic validation and
-      engineering tests do not satisfy this gate.
+      repeatability, and an independent comparison. This is a project extra,
+      not a JOSS must-meet desk-reject gate. Synthetic validation and
+      engineering tests do not satisfy that extra gate.
 - [x] The current official Inara workflow converts the paper to TeX and
       well-formed JATS with citations and figures resolved.
 - [x] The current candidate PDF was built from Inara-generated TeX with
