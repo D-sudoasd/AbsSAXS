@@ -16,7 +16,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
-CANONICAL_SLUG = "D-sudoasd/SASAbs"
+CANONICAL_SLUG = "D-sudoasd/AbsSAXS"
 CANONICAL_REPOSITORY = f"https://github.com/{CANONICAL_SLUG}"
 API_REPOSITORY = f"https://api.github.com/repos/{CANONICAL_SLUG}"
 EXPECTED_HOMEPAGE = "https://doi.org/10.5281/zenodo.19687103"

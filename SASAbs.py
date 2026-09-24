@@ -1,7 +1,7 @@
 """SAXSAbs Workbench — GUI for SAXS absolute intensity calibration.
 
 Part of the saxsabs package.
-Repository: https://github.com/D-sudoasd/SASAbs
+Repository: https://github.com/D-sudoasd/AbsSAXS
 License: BSD-3-Clause
 """
 import tkinter as tk

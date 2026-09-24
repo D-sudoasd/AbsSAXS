@@ -3,12 +3,12 @@
   "@type": "SoftwareSourceCode",
   "name": "saxsabs",
   "description": "Traceable SAXS absolute-intensity calibration and profile I/O",
-  "identifier": "https://github.com/D-sudoasd/SASAbs",
-  "url": "https://github.com/D-sudoasd/SASAbs",
+  "identifier": "https://github.com/D-sudoasd/AbsSAXS",
+  "url": "https://github.com/D-sudoasd/AbsSAXS",
   "version": "2.0.0",
   "license": "https://spdx.org/licenses/BSD-3-Clause",
-  "codeRepository": "https://github.com/D-sudoasd/SASAbs",
-  "issueTracker": "https://github.com/D-sudoasd/SASAbs/issues",
+  "codeRepository": "https://github.com/D-sudoasd/AbsSAXS",
+  "issueTracker": "https://github.com/D-sudoasd/AbsSAXS/issues",
   "programmingLanguage": [
     "Python"
   ],

@@ -75,7 +75,7 @@ def test_release_version_metadata_is_consistent(monkeypatch):
     assert '"Development Status :: 5 - Production/Stable"' not in pyproject
     assert '"Concept DOI" = "https://doi.org/10.5281/zenodo.19687103"' in pyproject
     assert "\nDOI = " not in pyproject
-    canonical = "https://github.com/D-sudoasd/SASAbs"
+    canonical = "https://github.com/D-sudoasd/AbsSAXS"
     concept_doi = "10.5281/zenodo.19687103"
     assert f'repository-code: "{canonical}"' in citation
     assert f'url: "{canonical}"' in citation

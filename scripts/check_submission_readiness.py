@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PAPER = ROOT / "paper" / "paper.md"
 EARLIEST_SUBMISSION_DATE = date(2026, 8, 26)
-CANONICAL_REPOSITORY = "https://github.com/D-sudoasd/SASAbs"
+CANONICAL_REPOSITORY = "https://github.com/D-sudoasd/AbsSAXS"
 
 REQUIRED_SECTIONS = (
     "Summary",

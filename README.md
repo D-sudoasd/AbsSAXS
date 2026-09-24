@@ -1,16 +1,17 @@
-# saxsabs
+# AbsSAXS｜同步辐射小角散射绝对强度标定工具
 
 <p align="center">
-  <a href="https://github.com/D-sudoasd/SASAbs/actions/workflows/ci.yml"><img src="https://github.com/D-sudoasd/SASAbs/actions/workflows/ci.yml/badge.svg" alt="Continuous integration status"></a>
+  <a href="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml"><img src="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml/badge.svg" alt="Continuous integration status"></a>
   <a href="https://doi.org/10.5281/zenodo.19687103"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19687103-168AAD" alt="Zenodo concept DOI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3-Clause-4C566A" alt="BSD-3-Clause license"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB" alt="Python 3.10 or later">
 </p>
 
-`saxsabs` converts small-angle X-ray scattering (SAXS) measurements to an
-absolute intensity scale. It estimates the calibration factor `K` from NIST
-SRM 3600 glassy carbon, water at a documented temperature, or a user-supplied
-reference. Monitor and transmission normalisation, sample thickness, and
+**AbsSAXS** (`saxsabs` Python package and command) converts small-angle X-ray
+scattering (SAXS) measurements to an absolute intensity scale. It estimates
+the calibration factor `K` from NIST SRM 3600 glassy carbon, water at a
+documented temperature, or a user-supplied reference. Monitor and transmission
+normalisation, sample thickness, and
 intensity state are recorded with the result. Outputs are CSV/TSV, canSAS1d
 XML, and optional NXcanSAS HDF5.
 
@@ -46,13 +47,13 @@ and xraydb. Install from the source tree on `main` (version `2.0.0`,
 unreleased):
 
 ```bash
-git clone https://github.com/D-sudoasd/SASAbs.git
-cd SASAbs
+git clone https://github.com/D-sudoasd/AbsSAXS.git
+cd AbsSAXS
 python -m pip install -e .
 ```
 
 No PyPI package is documented. GitHub Release
-[`v1.1.1`](https://github.com/D-sudoasd/SASAbs/releases/tag/v1.1.1) is the
+[`v1.1.1`](https://github.com/D-sudoasd/AbsSAXS/releases/tag/v1.1.1) is the
 last archived tag. The DOI badge above is the project concept DOI, not a
 version DOI for `2.0.0`.
 
@@ -193,7 +194,7 @@ required to install or run the software.
 
 ## Development
 
-The [continuous-integration workflow](https://github.com/D-sudoasd/SASAbs/actions/workflows/ci.yml)
+The [continuous-integration workflow](https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml)
 tests the configured Python and operating-system matrix.
 
 ```bash
@@ -203,7 +204,7 @@ ruff check SASAbs.py saxs_mpl_style.py src tests paper/*.py scripts/*.py
 ```
 
 Report reproducible problems on the
-[issue tracker](https://github.com/D-sudoasd/SASAbs/issues). Questions that
+[issue tracker](https://github.com/D-sudoasd/AbsSAXS/issues). Questions that
 are neither a defect nor a feature proposal can go to the same tracker or to
 the maintainers listed in [CITATION.cff](CITATION.cff). Read
 [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Project
@@ -220,4 +221,4 @@ Machine-readable metadata are in [CITATION.cff](CITATION.cff).
 
 ## License
 
-SASAbs is distributed under the [BSD-3-Clause license](LICENSE).
+AbsSAXS is distributed under the [BSD-3-Clause license](LICENSE).

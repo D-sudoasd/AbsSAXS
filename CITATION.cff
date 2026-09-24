@@ -3,14 +3,14 @@ message: "Cite an exact archived release when available. The README lists the pr
 title: "saxsabs"
 version: "2.0.0"
 type: software
-url: "https://github.com/D-sudoasd/SASAbs"
+url: "https://github.com/D-sudoasd/AbsSAXS"
 authors:
   - family-names: "Gong"
     given-names: "Delun"
     orcid: "https://orcid.org/0000-0001-7877-7707"
     affiliation: "Institute of Metal Research, Chinese Academy of Sciences"
     email: "dlgong@imr.ac.cn"
-repository-code: "https://github.com/D-sudoasd/SASAbs"
+repository-code: "https://github.com/D-sudoasd/AbsSAXS"
 license: "BSD-3-Clause"
 keywords:
   - SAXS

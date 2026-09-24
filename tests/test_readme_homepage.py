@@ -46,7 +46,7 @@ def test_shipped_readme_covers_joss_documentation_outcomes():
     assert "docs/api.md" in readme
     assert (REPO_ROOT / "docs" / "api.md").is_file()
     assert "CONTRIBUTING.md" in readme
-    assert "https://github.com/D-sudoasd/SASAbs/issues" in readme
+    assert "https://github.com/D-sudoasd/AbsSAXS/issues" in readme
     assert "CODE_OF_CONDUCT.md" in readme
     assert "CITATION.cff" in readme
 

@@ -18,7 +18,7 @@ def _load_checker():
 
 checker = _load_checker()
 COMMIT = "a" * 40
-RUN_URL = "https://github.com/D-sudoasd/SASAbs/actions/runs/12345"
+RUN_URL = "https://github.com/D-sudoasd/AbsSAXS/actions/runs/12345"
 
 
 def _payloads(branch: str = "joss-submission"):
@@ -28,7 +28,7 @@ def _payloads(branch: str = "joss-submission"):
         "ci_run_url": RUN_URL,
     }
     repository = {
-        "full_name": "D-sudoasd/SASAbs",
+        "full_name": "D-sudoasd/AbsSAXS",
         "private": False,
         "archived": False,
         "disabled": False,
@@ -46,7 +46,7 @@ def _payloads(branch: str = "joss-submission"):
         "status": "completed",
         "conclusion": "success",
         "event": "push",
-        "repository": {"full_name": "D-sudoasd/SASAbs"},
+        "repository": {"full_name": "D-sudoasd/AbsSAXS"},
     }
     readme_payload = {"type": "file", "path": "README.md", "size": 100, "sha": "b" * 40}
     paper_payload = {

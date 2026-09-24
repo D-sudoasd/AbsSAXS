@@ -1,11 +1,11 @@
 # Contributing
 
 Thanks for contributing to `saxsabs`. The canonical repository is
-<https://github.com/D-sudoasd/SASAbs>.
+<https://github.com/D-sudoasd/AbsSAXS>.
 
 ## Get help or report a problem
 
-- Report reproducible bugs through the [issue tracker](https://github.com/D-sudoasd/SASAbs/issues).
+- Report reproducible bugs through the [issue tracker](https://github.com/D-sudoasd/AbsSAXS/issues).
 - Use a feature request when proposing a new workflow or capability.
 - For a question that is neither a defect nor a proposal, contact the project
   maintainers through the repository before opening a broad pull request.
@@ -16,7 +16,7 @@ outputs in an issue or pull request.
 ## Development setup
 
 ```bash
-git clone https://github.com/D-sudoasd/SASAbs.git
+git clone https://github.com/D-sudoasd/AbsSAXS.git
 cd SASAbs
 python -m pip install -e ".[dev]"
 pytest -q

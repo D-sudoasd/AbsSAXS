@@ -60,10 +60,10 @@ saxsabs = "saxsabs.cli:main"
 saxsabs-workbench = "saxsabs.workbench_launcher:run_with_error_handling"
 
 [project.urls]
-Homepage = "https://github.com/D-sudoasd/SASAbs"
-Repository = "https://github.com/D-sudoasd/SASAbs"
-Issues = "https://github.com/D-sudoasd/SASAbs/issues"
-Changelog = "https://github.com/D-sudoasd/SASAbs/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/D-sudoasd/AbsSAXS"
+Repository = "https://github.com/D-sudoasd/AbsSAXS"
+Issues = "https://github.com/D-sudoasd/AbsSAXS/issues"
+Changelog = "https://github.com/D-sudoasd/AbsSAXS/blob/main/CHANGELOG.md"
 "Concept DOI" = "https://doi.org/10.5281/zenodo.19687103"
 
 [tool.setuptools]

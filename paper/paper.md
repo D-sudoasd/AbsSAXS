@@ -134,7 +134,7 @@ third-party consumers have not been verified.
 # Software availability
 
 Source code, tests, documentation, and examples are available in the [SASAbs
-GitHub repository](https://github.com/D-sudoasd/SASAbs) under the BSD-3-Clause
+GitHub repository](https://github.com/D-sudoasd/AbsSAXS) under the BSD-3-Clause
 license. The core package supports Python 3.10 and later; optional dependency
 groups enable Workbench, detector-image, BL19B2, and HDF5 functionality. The
 README includes installation instructions and minimal commands. Reviewers

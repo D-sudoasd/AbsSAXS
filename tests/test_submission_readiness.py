@@ -115,7 +115,7 @@ bibliography: paper.bib
                 "authorship_confirmed": True,
                 "ai_disclosure_confirmed": True,
                 "funding_and_coi_confirmed": True,
-                "ci_run_url": "https://github.com/D-sudoasd/SASAbs/actions/runs/12345",
+                "ci_run_url": "https://github.com/D-sudoasd/AbsSAXS/actions/runs/12345",
                 "submitted_branch": "joss-submission",
                 "submitted_commit": "a" * 40,
                 "confirmed_on": "2026-08-26",
