@@ -21,7 +21,12 @@ from . import __version__
 from .core.buffer_subtraction import subtract_buffer
 from .core.fluorescence_subtraction import subtract_fluorescence
 from .core.calibration import estimate_k_factor_robust
-from .core.intensity_state import require_relative_input_for_absolute_scaling
+from .core.intensity_state import (
+    IntensityState,
+    assess_intensity_state,
+    is_cm_inv_intensity_unit,
+    require_relative_input_for_absolute_scaling,
+)
 from .core.normalization import compute_norm_factor
 from .io.parsers import (
     _attach_intensity_arrays,
@@ -406,6 +411,56 @@ def _apply_declared_intensity_state(
     return updated
 
 
+def _validate_custom_reference_intensity(profile: dict[str, object]) -> None:
+    """Reject custom reference curves with explicit non-absolute evidence.
+
+    ``read_external_1d_profile`` adds a top-level ``intensity_state`` as a
+    classification result. Remove that derived field here so an unlabeled
+    reference remains distinguishable from a source that explicitly declares
+    an ambiguous state. The ``--ref`` option itself supplies the absolute-unit
+    assertion for otherwise unlabeled intensity columns.
+    """
+    provenance = profile.get("operator_provenance")
+    provenance = provenance if isinstance(provenance, dict) else {}
+    declared_units = [
+        str(metadata["intensity_unit"]).strip()
+        for metadata in (profile, provenance)
+        if metadata.get("intensity_unit") is not None
+        and str(metadata.get("intensity_unit")).strip()
+    ]
+    incompatible_units = [
+        unit for unit in declared_units if not is_cm_inv_intensity_unit(unit)
+    ]
+    if incompatible_units:
+        units_text = ", ".join(repr(unit) for unit in incompatible_units)
+        raise ValueError(
+            "custom reference profile declares intensity unit(s) incompatible with "
+            f"the required cm^-1 scale: {units_text}"
+        )
+
+    source_evidence = dict(profile)
+    source_evidence.pop("intensity_state", None)
+    assessment = assess_intensity_state(source_evidence)
+    if assessment.state is IntensityState.ABSOLUTE_CM_INV:
+        return
+    if (
+        assessment.state is IntensityState.AMBIGUOUS
+        and assessment.evidence == ("no_machine_readable_intensity_state",)
+    ):
+        return
+    if assessment.state is IntensityState.RELATIVE:
+        reason = "declares relative intensity"
+    elif assessment.state is IntensityState.RAW_COUNTS:
+        reason = "declares raw detector counts"
+    else:
+        reason = "has conflicting or invalid intensity metadata"
+    raise ValueError(
+        "custom reference profile "
+        f"{reason}; --ref requires an absolute reference curve. "
+        "For an unlabeled reference, --ref asserts q in A^-1 and intensity in cm^-1."
+    )
+
+
 def _normalize_q_profile(
     profile: dict[str, object],
     *,
@@ -685,13 +740,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--meas",
         required=True,
         type=Path,
-        help="Measured profile on the same intensity scale as the reference (cm^-1 for SRM 3600)",
+        help=(
+            "Reduced relative measured profile; it must not already be absolute or raw counts. "
+            "For a standard specimen, optionally divide by its thickness with "
+            "--thickness-cm before K estimation."
+        ),
     )
     p_k.add_argument(
         "--ref",
         default=None,
         type=Path,
-        help="Reference profile CSV; omit to use the built-in NIST SRM 3600 curve",
+        help=(
+            "Reference profile CSV. --ref asserts absolute reference intensity in cm^-1 "
+            "and q in A^-1 when q units are unlabeled; explicit q units are converted. "
+            "Unlabeled intensity columns are accepted, but relative, raw-count, or "
+            "conflicting intensity metadata are rejected. Omit to use the built-in "
+            "NIST SRM 3600 curve."
+        ),
     )
     p_k.add_argument("--q-col", default=None, help="Measured q column override")
     p_k.add_argument("--i-col", default=None, help="Measured intensity column override")
@@ -710,8 +775,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help=(
-            "Standard thickness in cm used to convert measured intensity to cm^-1 "
-            "before K estimation. Workbench Tab 1 enters millimetres "
+            "Standard-specimen thickness in cm; divide the measured relative intensity "
+            "by this thickness before K estimation. Workbench Tab 1 enters millimetres "
             "(1.055 mm = 0.1055 cm)."
         ),
     )
@@ -856,6 +921,7 @@ def main() -> None:
                     i_col=args.ref_i_col,
                     profile_label="reference",
                 )
+                _validate_custom_reference_intensity(reference)
                 reference = _normalize_q_profile(reference, profile_label="reference")
                 out = estimate_k_factor_robust(
                     q_meas=measured["x"],
@@ -878,6 +944,18 @@ def main() -> None:
                     "k_standard_uncertainty": out.k_standard_uncertainty,
                     "k_expanded_uncertainty": out.k_expanded_uncertainty,
                     "coverage_factor": out.coverage_factor,
+                    "parallelism_qc_method": out.parallelism_qc_method,
+                    "parallelism_tolerance_source": out.parallelism_tolerance_source,
+                    "k_statistical_standard_uncertainty_method": (
+                        out.k_statistical_standard_uncertainty_method
+                    ),
+                    "k_statistical_standard_uncertainty_assumptions": (
+                        out.k_statistical_standard_uncertainty_assumptions
+                    ),
+                    "k_standard_uncertainty_scope": out.k_standard_uncertainty_scope,
+                    "k_standard_uncertainty_assumes_independent_components": (
+                        out.k_standard_uncertainty_assumes_independent_components
+                    ),
                     "q_min_overlap": out.q_min_overlap,
                     "q_max_overlap": out.q_max_overlap,
                     "points_used": out.points_used,

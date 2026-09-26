@@ -22,10 +22,15 @@ from saxsabs.constants import (
 SRM3600_CERTIFIED_THICKNESS_CM: float = 0.1055
 """Certified SRM 3600 thickness used to normalize a measured standard profile."""
 
-_NIST_PARALLELISM_RELATIVE_TOLERANCE: float = float(
+_SRM3600_PROJECT_QC_RELATIVE_TOLERANCE: float = float(
     np.max(NIST_SRM3600_UNCERTAINTY[:, 1] / NIST_SRM3600_DATA[:, 1])
 )
-"""Certificate-derived expanded relative intensity uncertainty used for SRM QC."""
+"""Project QC heuristic set to the largest SRM 3600 expanded relative uncertainty.
+
+The NIST certificate does not specify this value as a point-wise ratio acceptance
+limit. It is retained as the default project threshold for rejecting strongly
+non-parallel ratio curves.
+"""
 
 
 @dataclass(frozen=True)
@@ -42,19 +47,37 @@ class KFactorEstimationResult:
         points_total: Total reference points in the overlap region.
         points_used: Number of inlier points after MAD filtering.
         ratios_used: 1-D array of inlier I_ref / I_meas ratios.
-        k_statistical_standard_uncertainty: Standard error of the inlier ratios.
-        k_standard_uncertainty: Combined standard uncertainty including the
-            reference standard, or ``None`` when reference uncertainty is unknown.
-        k_expanded_uncertainty: Expanded uncertainty, or ``None`` when no
-            coverage factor or reference uncertainty is available.
-coverage_factor: System coverage factor used for the expanded K uncertainty.
+        k_statistical_standard_uncertainty: Normal-approximation ratio-scatter
+            proxy for the standard error of the median, assuming independent
+            normally distributed ratio points. It is not a complete measurement
+            or metrological uncertainty.
+        k_standard_uncertainty: Partial quadrature estimate combining that
+            ratio-scatter proxy and the reference-standard uncertainty, or
+            ``None`` when reference uncertainty is unknown.
+        k_expanded_uncertainty: Expanded version of the partial standard
+            uncertainty, or ``None`` when no coverage factor or reference
+            uncertainty is available.
+        coverage_factor: Explicit system coverage factor used for the expanded
+            K uncertainty.
         reference_coverage_factor: Coverage factor reported by the reference certificate;
             retained as provenance and never applied to the full system budget.
         standard_thickness_cm: Standard thickness asserted for calibration.
         parallelism_max_relative_deviation: Largest observed relative deviation
             of a point-wise ratio from the median ratio.
         parallelism_relative_tolerance: Limit used for parallelism QC.
+        parallelism_qc_method: Point-wise ratio-curve comparison used by QC.
+        parallelism_tolerance_source: Provenance of the project QC threshold.
         parallelism_check_passed: QC result, or None when no limit was applied.
+        k_statistical_standard_uncertainty_method: Approximation used for the
+            ratio-scatter term.
+        k_statistical_standard_uncertainty_assumptions: Assumptions and omitted
+            covariance/noise terms for the ratio-scatter estimate.
+        k_standard_uncertainty_scope: ``"partial"`` when a reference uncertainty
+            is combined with ratio scatter, or ``"ratio_scatter_only"`` when the
+            reference uncertainty is unavailable.
+        k_standard_uncertainty_assumes_independent_components: Whether quadrature
+            combination assumes the ratio-scatter proxy and reference
+            uncertainty are independent.
     """
     k_factor: float
     k_std: float
@@ -72,6 +95,18 @@ coverage_factor: System coverage factor used for the expanded K uncertainty.
     parallelism_max_relative_deviation: float | None = None
     parallelism_relative_tolerance: float | None = None
     parallelism_check_passed: bool | None = None
+    parallelism_qc_method: str | None = None
+    parallelism_tolerance_source: str | None = None
+    k_statistical_standard_uncertainty_method: str = (
+        "asymptotic_normal_approximation_iid_ratio_points"
+    )
+    k_statistical_standard_uncertainty_assumptions: tuple[str, ...] = (
+        "inlier ratio points are treated as independent",
+        "inlier ratio scatter is approximated as normal",
+        "measurement noise and cross-Q covariance are not modeled",
+    )
+    k_standard_uncertainty_scope: str = "ratio_scatter_only"
+    k_standard_uncertainty_assumes_independent_components: bool | None = None
 
 
 def _regularize_profile(q: np.ndarray, i: np.ndarray, min_points: int = 3) -> tuple[np.ndarray, np.ndarray]:
@@ -155,14 +190,20 @@ def estimate_k_factor_robust(
         positive_floor: Threshold below which measured intensity is rejected.
         min_points: Minimum number of valid overlap points required.
         i_ref_standard_uncertainty: Point-wise combined standard uncertainty
-            of the reference intensity.
-coverage_factor: Explicit system factor for reporting expanded K uncertainty.
+            of the reference intensity. It is propagated as a partial reference
+            component; measurement noise and cross-Q covariance are not available
+            through this API.
+        coverage_factor: Explicit factor for reporting an expanded version of
+            the partial K uncertainty.
             The reference certificate factor is recorded separately and is not reused.
         standard_thickness_cm: Thickness used to normalize the standard profile.
             Built-in SRM 3600 accepts only its certified 0.1055 cm value.
-        parallelism_relative_tolerance: Maximum relative ratio deviation.
-            Built-in SRM 3600 uses its certificate-derived 6.25% expanded
-            relative intensity uncertainty and permits only stricter overrides.
+        parallelism_relative_tolerance: Project QC limit on the maximum relative
+            point-wise ratio deviation from the median ratio. The built-in
+            SRM 3600 default is a project heuristic set to the certificate's
+            maximum expanded relative uncertainty (about 6.25 %); NIST does
+            not specify it as a point-wise acceptance limit. Overrides for
+            built-in SRM 3600 cannot exceed the project default.
 
     Returns:
         A :class:`KFactorEstimationResult` containing the K-factor and
@@ -225,13 +266,19 @@ coverage_factor: Explicit system factor for reporting expanded K uncertainty.
             )
 
         if parallelism_relative_tolerance is None:
-            parallelism_tolerance = _NIST_PARALLELISM_RELATIVE_TOLERANCE
+            parallelism_tolerance = _SRM3600_PROJECT_QC_RELATIVE_TOLERANCE
+            parallelism_tolerance_source = (
+                "project_heuristic_from_max_srm3600_expanded_relative_uncertainty"
+            )
         else:
             parallelism_tolerance = float(parallelism_relative_tolerance)
-            if parallelism_tolerance > _NIST_PARALLELISM_RELATIVE_TOLERANCE:
+            parallelism_tolerance_source = "user_supplied_project_qc_limit"
+            if parallelism_tolerance > _SRM3600_PROJECT_QC_RELATIVE_TOLERANCE:
                 raise ValueError(
                     "SRM 3600 parallelism_relative_tolerance cannot exceed "
-                    f"the certificate-derived {_NIST_PARALLELISM_RELATIVE_TOLERANCE:.7g}"
+                    "the project default derived from the certificate maximum "
+                    "expanded relative uncertainty "
+                    f"({_SRM3600_PROJECT_QC_RELATIVE_TOLERANCE:.7g})"
                 )
     else:
         q_ref_all = np.asarray(q_ref, dtype=np.float64)
@@ -253,6 +300,9 @@ coverage_factor: Explicit system factor for reporting expanded K uncertainty.
             None
             if parallelism_relative_tolerance is None
             else float(parallelism_relative_tolerance)
+        )
+        parallelism_tolerance_source = (
+            None if parallelism_tolerance is None else "user_supplied_project_qc_limit"
         )
 
     if parallelism_tolerance is not None and (
@@ -351,7 +401,9 @@ coverage_factor: Explicit system factor for reporting expanded K uncertainty.
 
     parallelism_max_relative_deviation: float | None = None
     parallelism_check_passed: bool | None = None
+    parallelism_qc_method: str | None = None
     if parallelism_tolerance is not None:
+        parallelism_qc_method = "maximum_absolute_pointwise_ratio_deviation_from_median"
         ratio_center = float(np.median(ratios))
         with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
             relative_deviation = np.abs(ratios / ratio_center - 1.0)
@@ -391,8 +443,10 @@ coverage_factor: Explicit system factor for reporting expanded K uncertainty.
     with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
         k_val = float(np.nanmedian(ratios_used))
         k_std = float(np.nanstd(ratios_used))
-        # The estimator is a median, whose normal-approximation standard error is
-        # sqrt(pi/2) times the standard error of a mean from the same distribution.
+        # Approximate the median SE as sqrt(pi/2) * sigma / sqrt(n), which is
+        # valid asymptotically for iid normal ratio points. Neighboring q-points
+        # may be correlated by interpolation; this term is only a ratio-scatter
+        # proxy because measurement noise and cross-q covariance are not inputs.
         k_statistical_u = float(
             np.sqrt(np.pi / 2.0) * k_std / np.sqrt(ratios_used.size)
         )
@@ -403,6 +457,7 @@ coverage_factor: Explicit system factor for reporting expanded K uncertainty.
         k_standard_u = float(np.hypot(k_statistical_u, reference_u))
         if coverage_factor is not None:
             k_expanded_u = float(coverage_factor * k_standard_u)
+    uncertainty_scope = "partial" if k_standard_u is not None else "ratio_scatter_only"
     derived_statistics = [k_val, k_std, k_statistical_u]
     derived_statistics.extend(
         value for value in (k_standard_u, k_expanded_u) if value is not None
@@ -431,4 +486,10 @@ coverage_factor: Explicit system factor for reporting expanded K uncertainty.
         parallelism_max_relative_deviation=parallelism_max_relative_deviation,
         parallelism_relative_tolerance=parallelism_tolerance,
         parallelism_check_passed=parallelism_check_passed,
+        parallelism_qc_method=parallelism_qc_method,
+        parallelism_tolerance_source=parallelism_tolerance_source,
+        k_standard_uncertainty_scope=uncertainty_scope,
+        k_standard_uncertainty_assumes_independent_components=(
+            True if k_standard_u is not None else None
+        ),
     )

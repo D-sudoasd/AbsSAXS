@@ -2,6 +2,29 @@
 
 ## [2.0.0] - Unreleased
 
+### JOSS and distribution readiness (2026-09-26)
+
+- Reject contradictory intensity-state and correction-ledger metadata instead
+  of selecting one declaration silently.
+- Reject custom K-factor references whose explicit units or intensity state
+  conflict with absolute intensity in cm^-1; document that `--ref` asserts
+  cm^-1 intensity and A^-1 q for otherwise unlabeled columns.
+- Validate the BL19B2 polarization factor as finite and within [-1, 1].
+- Clarify that `rate` and `integrated` describe beam-monitor recording, while
+  detector profiles contain accumulated counts; include this contract in the
+  CLI and workflow documentation.
+- Record the K-factor QC method and uncertainty assumptions in CLI and BL19B2
+  provenance, and label the uncertainty as partial when measurement noise and
+  cross-q covariance are unavailable.
+- Revise the JOSS manuscript, bibliography, and workflow figures; refresh the
+  README presentation and add a conceptual cover illustration.
+- Build and inspect wheel and source distributions in CI on candidate commits,
+  then clean-install the wheel before archiving the CI artifacts.
+- Scope the GitHub release token to the publishing job and require a setuptools
+  version that supports this project's PEP 639 SPDX license metadata.
+- Refresh submission-readiness guidance for the current JOSS paper, open-
+  development, AI-disclosure, and post-review archive requirements.
+
 ### Release-readiness hardening (2026-08-27)
 
 - Harden the Workbench preflight boundary with content-aware input identities,

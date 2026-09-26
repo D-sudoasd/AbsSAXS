@@ -162,6 +162,33 @@ def test_schema_v4_k_contract_rejects_inconsistent_parallelism_result():
         bl19b2._k_calibration_contract(payload, require_complete=True)
 
 
+def test_k_estimation_diagnostics_stay_outside_schema_v4_contract():
+    diagnostics = {
+        "parallelism_qc_method": "maximum_absolute_pointwise_ratio_deviation_from_median",
+        "parallelism_tolerance_source": (
+            "project_heuristic_from_max_srm3600_expanded_relative_uncertainty"
+        ),
+        "k_statistical_standard_uncertainty_method": (
+            "asymptotic_normal_approximation_iid_ratio_points"
+        ),
+        "k_statistical_standard_uncertainty_assumptions": [
+            "inlier ratio points are treated as independent",
+            "inlier ratio scatter is approximated as normal",
+            "measurement noise and cross-Q covariance are not modeled",
+        ],
+        "k_standard_uncertainty_scope": "partial",
+        "k_standard_uncertainty_assumes_independent_components": True,
+    }
+    contract = _complete_k_calibration_contract(
+        k_estimation_diagnostics=diagnostics
+    )
+
+    assert set(bl19b2._k_calibration_contract(contract, require_complete=True)) == set(
+        bl19b2._K_CALIBRATION_KEYS
+    )
+    assert bl19b2._k_estimation_diagnostics(contract) == diagnostics
+
+
 def test_bl19b2_config_preserves_pre_v4_positional_field_order(tmp_path: Path):
     config = BL19B2Abs2DConfig(
         tmp_path / "input",
@@ -1561,6 +1588,42 @@ def test_validate_config_requires_explicit_monitor_mode(tmp_path: Path):
         validate_config(config)
 
 
+@pytest.mark.parametrize(
+    "polarization_factor",
+    [-1.01, 1.01, math.nan, math.inf, -math.inf, True, "0.5"],
+)
+def test_validate_config_rejects_invalid_polarization_factor(
+    polarization_factor: object,
+    tmp_path: Path,
+):
+    config = BL19B2Abs2DConfig(
+        input_root=tmp_path / "dat001",
+        poni_path=tmp_path / "geometry.poni",
+        mu_cm_inv=20.2,
+        monitor_mode="rate",
+        polarization_factor=polarization_factor,
+    )
+
+    with pytest.raises(ValueError, match="polarization_factor"):
+        validate_config(config)
+
+
+@pytest.mark.parametrize("polarization_factor", [-1.0, 0.0, 1.0])
+def test_validate_config_accepts_polarization_factor_interval(
+    polarization_factor: float,
+    tmp_path: Path,
+):
+    config = BL19B2Abs2DConfig(
+        input_root=tmp_path / "dat001",
+        poni_path=tmp_path / "geometry.poni",
+        mu_cm_inv=20.2,
+        monitor_mode="rate",
+        polarization_factor=polarization_factor,
+    )
+
+    validate_config(config)
+
+
 @pytest.mark.parametrize("alpha", [0.0, -1.0, math.nan])
 def test_validate_config_rejects_nonpositive_or_nonfinite_alpha(
     alpha: float,
@@ -2000,6 +2063,20 @@ def test_resume_validates_source_and_hdf5_edf_checksums(
         alpha_standard_uncertainty=0.0,
         coverage_factor=2.0,
     )
+    k_diagnostics = {
+        "parallelism_qc_method": "maximum_absolute_pointwise_ratio_deviation_from_median",
+        "parallelism_tolerance_source": "user_supplied_project_qc_limit",
+        "k_statistical_standard_uncertainty_method": (
+            "asymptotic_normal_approximation_iid_ratio_points"
+        ),
+        "k_statistical_standard_uncertainty_assumptions": [
+            "inlier ratio points are treated as independent",
+            "inlier ratio scatter is approximated as normal",
+            "measurement noise and cross-Q covariance are not modeled",
+        ],
+        "k_standard_uncertainty_scope": "partial",
+        "k_standard_uncertainty_assumes_independent_components": True,
+    }
     metadata = {
         "schema": SCHEMA_VERSION,
         "formula_version": bl19b2.FORMULA_VERSION,
@@ -2024,7 +2101,10 @@ def test_resume_validates_source_and_hdf5_edf_checksums(
             "thickness_cm": 0.034,
             "derivation": {**signed_derivation, "copied_path": "thickness.json"},
         },
-        "absolute_calibration": _complete_k_calibration_contract(),
+        "absolute_calibration": {
+            **_complete_k_calibration_contract(),
+            "k_estimation_diagnostics": k_diagnostics,
+        },
         "uncertainty": {
             "status": "complete",
             "unknown_components": [],
@@ -2036,6 +2116,12 @@ def test_resume_validates_source_and_hdf5_edf_checksums(
         "warnings": [],
     }
     bl19b2.write_hdf5_image(paths.h5, image, metadata, budget)
+    import h5py
+
+    with h5py.File(paths.h5, "r") as h5:
+        assert json.loads(
+            h5["entry"].attrs["k_estimation_diagnostics_json"]
+        ) == k_diagnostics
     bl19b2.write_edf_image(paths.edf, image, metadata)
     metadata["outputs"]["hdf5_sha256"] = bl19b2._file_sha256(paths.h5)
     metadata["outputs"]["edf_sha256"] = bl19b2._file_sha256(paths.edf)
@@ -2061,8 +2147,6 @@ def test_resume_validates_source_and_hdf5_edf_checksums(
 
     original_hdf5 = paths.h5.read_bytes()
     original_edf = paths.edf.read_bytes()
-    import h5py
-
     with h5py.File(paths.h5, "r+") as h5:
         h5["entry"].attrs["include_manifest_sha256"] = "tampered"
     metadata["outputs"]["hdf5_sha256"] = bl19b2._file_sha256(paths.h5)
@@ -2446,6 +2530,20 @@ def test_write_provenance_package_records_reproducibility_files(tmp_path: Path):
         k_standard_uncertainty=0.4,
         k_expanded_uncertainty=0.8,
         coverage_factor=2.0,
+        parallelism_qc_method="maximum_absolute_pointwise_ratio_deviation_from_median",
+        parallelism_tolerance_source=(
+            "project_heuristic_from_max_srm3600_expanded_relative_uncertainty"
+        ),
+        k_statistical_standard_uncertainty_method=(
+            "asymptotic_normal_approximation_iid_ratio_points"
+        ),
+        k_statistical_standard_uncertainty_assumptions=(
+            "inlier ratio points are treated as independent",
+            "inlier ratio scatter is approximated as normal",
+            "measurement noise and cross-Q covariance are not modeled",
+        ),
+        k_standard_uncertainty_scope="partial",
+        k_standard_uncertainty_assumes_independent_components=True,
     )
 
     paths = write_provenance_package(
@@ -2482,6 +2580,17 @@ def test_write_provenance_package_records_reproducibility_files(tmp_path: Path):
     assert summary["standard_calibration"]["k_factor"] == 11.4
     assert summary["standard_calibration"]["k_standard_uncertainty"] == 0.4
     assert summary["standard_calibration"]["k_expanded_uncertainty"] == 0.8
+    assert summary["k_estimation_diagnostics"]["k_standard_uncertainty_scope"] == "partial"
+    assert summary["k_estimation_diagnostics"][
+        "k_standard_uncertainty_assumes_independent_components"
+    ] is True
+    assert summary["k_estimation_diagnostics"][
+        "k_statistical_standard_uncertainty_assumptions"
+    ] == [
+        "inlier ratio points are treated as independent",
+        "inlier ratio scatter is approximated as normal",
+        "measurement noise and cross-Q covariance are not modeled",
+    ]
     assert summary["software_versions"]["packages"]["pyFAI"] == "2026"
     assert summary["code_state"]["status"] == "dirty"
     assert "diff --git" in paths.code_state.read_text(encoding="utf-8")

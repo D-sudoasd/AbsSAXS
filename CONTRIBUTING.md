@@ -1,58 +1,76 @@
 # Contributing
 
-Thanks for contributing to `saxsabs`. The canonical repository is
+Thanks for considering a contribution to AbsSAXS. The canonical repository is
 <https://github.com/D-sudoasd/AbsSAXS>.
 
-## Get help or report a problem
+## Questions and issue reports
 
-- Report reproducible bugs through the [issue tracker](https://github.com/D-sudoasd/AbsSAXS/issues).
-- Use a feature request when proposing a new workflow or capability.
-- For a question that is neither a defect nor a proposal, contact the project
-  maintainers through the repository before opening a broad pull request.
+Report reproducible bugs or propose features through the
+[issue tracker](https://github.com/D-sudoasd/AbsSAXS/issues). Include the
+smallest portable example that reproduces the problem and the command or API
+call used. Do not attach beamline-private data, credentials, or large generated
+outputs; replace them with anonymized fixtures where possible.
 
-Please do not include beamline-private data, credentials, or large generated
-outputs in an issue or pull request.
+For a question that is not a bug or feature proposal, use the maintainer contact
+listed in [CITATION.cff](CITATION.cff). Follow the
+[Code of Conduct](CODE_OF_CONDUCT.md) in issues, discussions, and pull requests.
 
 ## Development setup
 
+Python 3.10 or later is required. From a fresh checkout:
+
 ```bash
 git clone https://github.com/D-sudoasd/AbsSAXS.git
-cd SASAbs
+cd AbsSAXS
 python -m pip install -e ".[dev]"
 pytest -q
 ruff check SASAbs.py saxs_mpl_style.py src tests paper/*.py scripts/*.py
 ```
 
-Install `.[gui]`, `.[hdf5]`, `.[io]`, or `.[bl19b2]` only when the change needs
-those optional workflows.
+The `dev` extra installs pytest, Ruff, and development dependencies. To run the
+same optional workflows installed in continuous integration, install all
+supported extras:
+
+```bash
+python -m pip install -e ".[dev,gui,bl19b2,hdf5]"
+```
+
+The CLI and core API do not require a display. Changes to GUI workflows may also
+need the `gui` extra and a local display. See the
+[manual verification checklist](examples/manual-verification.md) for the
+portable synthetic 2D path and Workbench checks.
 
 ## Pull requests
 
-Keep pull requests focused. For a behavior change:
+Keep each pull request focused. For a behavior change:
 
-- add or update focused tests;
-- keep reusable scientific logic in `src/saxsabs/` and GUI orchestration separate;
-- update public CLI/API documentation when its behavior changes;
-- run `pytest -q` and
-  `ruff check SASAbs.py saxs_mpl_style.py src tests paper/*.py scripts/*.py`
-  locally;
-- describe the workflow, validation performed, and any remaining limitations.
+- add or update focused tests for the changed behavior;
+- keep reusable scientific calculations and I/O in `src/saxsabs/`, with GUI
+  orchestration separate;
+- update the README, API reference, or workflow documentation when public
+  behavior changes;
+- run the relevant tests and Ruff checks, and include the exact commands and
+  results in the pull-request description;
+- describe any instrument-specific assumptions or inputs needed to reproduce
+  the workflow.
 
-Maintainers review pull requests for scientific input semantics, provenance,
-reproducibility, and compatibility with supported optional dependencies.
+Use anonymized, small fixtures in tests and examples. Do not commit
+beamline-private datasets, credentials, generated outputs, or audit artifacts.
+Reviews focus on scientific input semantics, provenance, reproducibility, and
+behavior with supported optional dependencies.
 
 ## Release expectations
 
-Releases are created from version tags after the validation workflow succeeds.
-Before tagging, replace the `Unreleased` changelog heading with the ISO release
-date, add the same `date-released` to `CITATION.cff`, and set its message to
-`Cite the version-specific archive record for this release.` The release
-metadata validator rejects provisional or inconsistent values.
-Before describing a release-specific DOI in project metadata or release notes,
-ensure Zenodo has archived that release and assigned its DOI. The project-level
-concept DOI remains suitable for general project citation.
+Version `2.0.0` is the current unreleased JOSS candidate; `v1.1.1` is the latest
+archived release. Keep the candidate untagged during JOSS review. After review,
+the maintainer should identify the finalized commit, confirm its validation and
+release metadata, then create the matching version tag and GitHub Release and
+archive that same version with Zenodo. Update the changelog and citation metadata
+from the finalized commit, and publish a version-specific DOI only after Zenodo
+assigns it. The project-level concept DOI remains suitable for general citation.
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
-Report unacceptable behaviour to the repository maintainer.
+All contributors are expected to follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). The document describes how to report
+unacceptable behaviour.

@@ -59,6 +59,17 @@ def test_default_nist_calibration_reports_certificate_aware_k_uncertainty():
     assert out.k_expanded_uncertainty is None
     assert out.coverage_factor is None
     assert out.reference_coverage_factor == pytest.approx(NIST_SRM3600_COVERAGE_FACTOR)
+    assert out.k_statistical_standard_uncertainty_method == (
+        "asymptotic_normal_approximation_iid_ratio_points"
+    )
+    assert "inlier ratio points are treated as independent" in (
+        out.k_statistical_standard_uncertainty_assumptions
+    )
+    assert "measurement noise and cross-Q covariance are not modeled" in (
+        out.k_statistical_standard_uncertainty_assumptions
+    )
+    assert out.k_standard_uncertainty_scope == "partial"
+    assert out.k_standard_uncertainty_assumes_independent_components is True
 
 
 def test_custom_reference_does_not_treat_unknown_systematic_uncertainty_as_zero():
@@ -70,6 +81,8 @@ def test_custom_reference_does_not_treat_unknown_systematic_uncertainty_as_zero(
     assert out.k_standard_uncertainty is None
     assert out.k_expanded_uncertainty is None
     assert out.coverage_factor is None
+    assert out.k_standard_uncertainty_scope == "ratio_scatter_only"
+    assert out.k_standard_uncertainty_assumes_independent_components is None
 
 
 def test_k_statistical_uncertainty_matches_median_estimator_not_mean_estimator():
@@ -351,6 +364,12 @@ def test_builtin_nist_records_certified_thickness_and_parallelism_qc():
     assert out.parallelism_max_relative_deviation == pytest.approx(0.0, abs=1e-12)
     assert out.parallelism_relative_tolerance == pytest.approx(0.0625, rel=3e-6)
     assert out.parallelism_check_passed is True
+    assert out.parallelism_qc_method == (
+        "maximum_absolute_pointwise_ratio_deviation_from_median"
+    )
+    assert out.parallelism_tolerance_source == (
+        "project_heuristic_from_max_srm3600_expanded_relative_uncertainty"
+    )
 
 
 def test_builtin_nist_rejects_noncertified_standard_thickness():
@@ -388,6 +407,7 @@ def test_builtin_nist_parallelism_qc_accepts_explicit_stricter_tolerance():
     assert out.parallelism_max_relative_deviation <= 0.01
     assert out.parallelism_relative_tolerance == pytest.approx(0.01)
     assert out.parallelism_check_passed is True
+    assert out.parallelism_tolerance_source == "user_supplied_project_qc_limit"
 
 
 def test_estimate_k_factor_rejects_duplicate_reference_q_values():
@@ -416,10 +436,10 @@ def test_estimate_k_factor_rejects_nonfinite_derived_statistics():
             positive_floor=0.0,
         )
 
-def test_builtin_nist_rejects_parallelism_tolerance_looser_than_certificate():
+def test_builtin_nist_rejects_parallelism_tolerance_above_project_heuristic():
     q = NIST_SRM3600_DATA[:, 0]
 
-    with pytest.raises(ValueError, match="cannot exceed.*certificate-derived"):
+    with pytest.raises(ValueError, match="cannot exceed.*project default"):
         estimate_k_factor_robust(
             q,
             NIST_SRM3600_DATA[:, 1],

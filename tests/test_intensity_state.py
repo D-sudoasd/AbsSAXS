@@ -62,6 +62,67 @@ def test_absolute_unit_is_detected_even_with_generic_i_column():
     assert assessment.state is IntensityState.ABSOLUTE_CM_INV
 
 
+@pytest.mark.parametrize(
+    "profile",
+    [
+        {"intensity_state": "absolute_cm^-1", "intensity_unit": "a.u."},
+        {"intensity_state": "absolute_cm^-1", "intensity_unit": "mm^-1"},
+        {"i_col": "I_abs", "intensity_unit": "a.u."},
+        {
+            "i_col": "I",
+            "intensity_unit": "1/cm",
+            "operator_provenance": {"intensity_unit": "mm^-1"},
+        },
+        {
+            "intensity_state": "absolute_cm^-1",
+            "operator_provenance": {"intensity_unit": "a.u."},
+        },
+        {
+            "i_col": "I",
+            "intensity_unit": "a.u.",
+            "operator_provenance": {"intensity_unit": "arbitrary units"},
+        },
+    ],
+    ids=[
+        "absolute-au",
+        "absolute-mm-inverse",
+        "absolute-column-au",
+        "top-level-cm-nested-mm",
+        "nested-au",
+        "conflicting-unit-records",
+    ],
+)
+def test_non_cm_unit_metadata_conflicts_with_absolute_claims(profile):
+    assessment = assess_intensity_state(profile)
+
+    assert assessment.state is IntensityState.AMBIGUOUS
+    assert any(
+        evidence.startswith("invalid_metadata:intensity_unit")
+        or evidence == "conflicting_intensity_unit_metadata"
+        for evidence in assessment.evidence
+    )
+
+
+def test_relative_profile_may_use_arbitrary_intensity_units():
+    assessment = assess_intensity_state(
+        {"intensity_state": "relative", "intensity_unit": "a.u."}
+    )
+
+    assert assessment.state is IntensityState.RELATIVE
+
+
+def test_equivalent_cm_inverse_units_in_profile_and_provenance_agree():
+    assessment = assess_intensity_state(
+        {
+            "intensity_state": "absolute_cm^-1",
+            "intensity_unit": "1/cm",
+            "operator_provenance": {"intensity_unit": "cm⁻¹"},
+        }
+    )
+
+    assert assessment.state is IntensityState.ABSOLUTE_CM_INV
+
+
 def test_invalid_explicit_state_is_ambiguous_even_with_absolute_unit_evidence():
     assessment = assess_intensity_state(
         {
@@ -121,6 +182,40 @@ def test_conflicting_relative_metadata_and_absolute_column_is_ambiguous():
     )
 
     assert assessment.state is IntensityState.AMBIGUOUS
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        {
+            "intensity_state": "relative",
+            "operator_provenance": {"intensity_state": "absolute_cm^-1"},
+        },
+        {
+            "intensity_state": "relative",
+            "corrections_applied": ["thickness", "k"],
+            "operator_provenance": {
+                "intensity_state": "relative",
+                "corrections_applied": [],
+            },
+        },
+        {
+            "i_col": "I_rel",
+            "do_not_repeat": ["k"],
+            "operator_provenance": {
+                "intensity_state": "relative",
+                "do_not_repeat": [],
+            },
+        },
+    ],
+    ids=["state", "applied-ledger", "repeat-ledger"],
+)
+def test_conflicting_top_level_and_nested_metadata_is_ambiguous(profile):
+    assessment = assess_intensity_state(profile)
+
+    assert assessment.state is IntensityState.AMBIGUOUS
+    with pytest.raises(ValueError, match="intensity state is ambiguous"):
+        require_relative_input_for_absolute_scaling(profile)
 
 
 def test_correction_ledger_roundtrip_is_stable_and_rejects_unknown_entries():

@@ -1,4 +1,4 @@
-# AbsSAXS｜同步辐射小角散射绝对强度标定工具
+# AbsSAXS
 
 <p align="center">
   <a href="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml"><img src="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml/badge.svg" alt="Continuous integration status"></a>
@@ -7,217 +7,244 @@
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB" alt="Python 3.10 or later">
 </p>
 
-**AbsSAXS** (`saxsabs` Python package and command) converts small-angle X-ray
-scattering (SAXS) measurements to an absolute intensity scale. It estimates
-the calibration factor `K` from NIST SRM 3600 glassy carbon, water at a
-documented temperature, or a user-supplied reference. Monitor and transmission
-normalisation, sample thickness, and
-intensity state are recorded with the result. Outputs are CSV/TSV, canSAS1d
-XML, and optional NXcanSAS HDF5.
-
-The intended users are beamline scientists and SAXS experimenters who need to
-place external 1D profiles, or detector images with compatible metadata and
-geometry, onto a cm⁻¹ scale and keep the processing record with the result.
-pyFAI handles detector geometry and azimuthal integration. FabIO reads
-detector images. Dioptas explores two-dimensional diffraction. SasView and
-Irena fit small-angle models. BioXTAS RAW reduces BioSAXS data and can scale
-to water or glassy carbon. `saxsabs` focuses on absolute-scale calibration for
-external 1D data and the current BL19B2 2D workflow. It names the intensity
-state (`raw_counts`, `relative`, `absolute_cm^-1`, or `ambiguous`) and runs
-scaling or buffer subtraction only when that state and the required physical
-inputs are compatible.
-
 <p align="center">
-  <img src="assets/readme/hero.svg" width="100%" alt="saxsabs estimates K from a measured SAXS profile and a reference, then writes absolute I(q) in inverse centimetres with the calibration inputs.">
+  <img src="assets/readme/saxsabs-overview.png" width="100%" alt="Conceptual illustration of SAXS absolute-intensity calibration; this artwork is not an experimental measurement.">
 </p>
 
 <p align="center">
   <a href="#installation"><strong>Installation</strong></a> ·
   <a href="#example-usage">Example usage</a> ·
   <a href="#workflows">Workflows</a> ·
+  <a href="#workbench">Workbench</a> ·
   <a href="docs/api.md">API reference</a> ·
-  <a href="docs/architecture.md">Architecture</a> ·
   <a href="#citation">Citation</a>
 </p>
 
+**Absolute-intensity calibration for small-angle X-ray scattering (SAXS).**
+
+A SAXS profile may begin as detector counts or relative intensity. To compare it
+with a reference, its scale must be established from the measurement conditions
+and calibration standard. AbsSAXS estimates the scale factor `K` and records
+the monitor, transmission, thickness, intensity state, and corrections
+associated with the result.
+
+The `saxsabs` Python package provides a command-line interface, a Python API,
+and the SAXSAbs Workbench desktop application. It supports external 1D profiles
+and a strict 2D workflow for SPring-8 BL19B2 conventions. The project is intended
+for beamline scientists and SAXS researchers who need to calibrate and exchange
+absolute-intensity profiles with their processing context.
+
+## What it does
+
+- Normalizes accumulated detector counts using either a beam-monitor count
+  rate (`rate`, in counts/s) integrated over exposure time, or integrated
+  monitor counts (`integrated`); sample transmission is included in either
+  mode.
+- Estimates `K` from NIST SRM 3600 glassy carbon, water at a documented
+  temperature, or a supplied reference curve.
+- Tracks whether a profile contains `raw_counts`, `relative`, `absolute_cm^-1`,
+  or `ambiguous` intensity, and gates operations when the state or required
+  inputs are incompatible.
+- Supports buffer subtraction and optional 1D fluorescence subtraction for
+  profiles with compatible units, correction history, and provenance.
+- Reads supported text, canSAS1d XML, and NXcanSAS HDF5 profiles; writes CSV,
+  TSV, canSAS1d XML, and optional NXcanSAS HDF5.
+- Provides strict BL19B2 detector-image workflows alongside the interactive
+  Workbench.
+
+Related tools address different stages of SAXS work. pyFAI provides detector
+geometry and azimuthal integration; SasView and Irena support data analysis and
+model fitting; BioXTAS RAW supports BioSAXS reduction and absolute scaling
+against water or glassy carbon. AbsSAXS focuses on calibration for external 1D
+profiles and the documented BL19B2 2D workflow, with processing context carried
+alongside results.
+
 ## Installation
 
-Python 3.10 or later is required. The core package depends on NumPy, pandas,
-and xraydb. Install from the source tree on `main` (version `2.0.0`,
-unreleased):
+Python 3.10 or later is required. The core package depends on NumPy, pandas, and
+xraydb. Install the current source checkout with:
 
 ```bash
 git clone https://github.com/D-sudoasd/AbsSAXS.git
 cd AbsSAXS
 python -m pip install -e .
+saxsabs --version
 ```
 
-No PyPI package is documented. GitHub Release
-[`v1.1.1`](https://github.com/D-sudoasd/AbsSAXS/releases/tag/v1.1.1) is the
-last archived tag. The DOI badge above is the project concept DOI, not a
-version DOI for `2.0.0`.
+The current source reports version `2.0.0`, an unreleased candidate for JOSS
+review. The latest archived release is
+[`v1.1.1`](https://github.com/D-sudoasd/AbsSAXS/releases/tag/v1.1.1).
 
-On Windows, `py -m pip install -e .` is the equivalent Python-launcher form.
+Install optional features only when needed:
 
-<details>
-<summary><strong>Optional dependency groups</strong></summary>
+| Extra | Adds |
+| --- | --- |
+| `gui` | SAXSAbs Workbench, detector-image support, and plotting dependencies |
+| `io` | FabIO detector-image I/O |
+| `hdf5` | NXcanSAS HDF5 writing |
+| `bl19b2` | Dependencies for the strict BL19B2 workflows |
+| `dev` | Pytest, Ruff, and development tools |
+
+For example:
 
 ```bash
-python -m pip install -e ".[gui]"      # SAXSAbs Workbench
-python -m pip install -e ".[hdf5]"     # NXcanSAS HDF5
-python -m pip install -e ".[io]"       # FabIO detector-image I/O
-python -m pip install -e ".[bl19b2]"   # strict BL19B2 workflow
-python -m pip install -e ".[dev]"      # tests and Ruff
+python -m pip install -e ".[gui]"
+python -m pip install -e ".[hdf5]"
 ```
 
-The Workbench uses Tk. Windows and macOS Python installers commonly include
-it. On Linux, install the distribution Tk package (often `python3-tk`) if
-`python -m tkinter` cannot open a test window. API and CLI workflows do not
-need a display server.
-
-</details>
+The Workbench uses Tk, which is included with many Windows and macOS Python
+distributions. On Linux, install the system Tk package (often `python3-tk`) if
+`python -m tkinter` is unavailable. The CLI and Python API do not require a
+display server.
 
 ## Example usage
 
+For `rate` mode, `MON` is a monitor count rate in counts/s and `exp` is exposure
+time in seconds. For `integrated` mode, `MON` is the monitor count accumulated
+over the exposure. Detector data are accumulated counts in both modes.
+
 ```bash
+# Rate mode: MON=100,000 counts/s; exposure=1 s; transmission=0.8
 saxsabs norm-factor --mode rate --exp 1.0 --mon 100000 --trans 0.8
 # 80000.0
 
-saxsabs estimate-k --meas examples/k_measured.csv --intensity-state relative
+# Integrated mode: MON=100,000 monitor counts; transmission=0.8
+saxsabs norm-factor --mode integrated --mon 100000 --trans 0.8
+# 80000.0
 ```
 
-`estimate-k` uses the built-in NIST SRM 3600 curve when `--ref` is omitted.
-The measured file must be on a relative intensity scale; the command stops if
-that state is missing or inconsistent.
+Estimate `K` from the bundled example profiles:
+
+```bash
+saxsabs estimate-k --meas examples/k_measured.csv --ref examples/k_reference.csv --qmin 0.01 --qmax 0.2
+```
+
+The measured input must already be reduced to relative intensity with
+appropriate dark/background subtraction and monitor/transmission
+normalization; thickness must be accounted for either in the profile or through
+`--thickness-cm`. The CLI requires an explicit `relative` state and refuses
+raw-count, ambiguous, and already absolute input. The example file declares
+`intensity_state=relative`, and its paired reference declares
+`absolute_cm^-1`. It reports `k_factor: 2.0`. These demonstration profiles are
+not beamline measurements.
+
+The same normalization is available through the Python API:
 
 ```python
 from saxsabs import compute_norm_factor
 
+# MON = 100,000 counts/s; exposure = 1 s; transmission = 0.8
 factor = compute_norm_factor(1.0, 100000.0, 0.8, "rate")
-# 80000.0
+print(factor)  # 80000.0
 ```
 
-The [API reference](docs/api.md) lists the public calculation and I/O
-functions, including `estimate_k_factor_robust`, intensity-state gates, and
-the canSAS / NXcanSAS writers.
+See the [API and command-line reference](docs/api.md) for function signatures,
+supported formats, required metadata, and scientific boundaries.
 
 ## Workflows
 
-<p align="center">
-  <img src="assets/readme/workflow.svg" width="100%" alt="CLI utilities, Workbench, BL19B2 runner, and Python API share K estimation, intensity-state checks, and typed I/O, then write absolute I(q), canSAS1d XML, and NXcanSAS HDF5.">
-</p>
-
-| Route | Use when | Start here |
+| Route | Use it for | Start here |
 | --- | --- | --- |
-| **CLI utilities** | normalisation, header and 1D parsing, gated `K` estimation, gated buffer and fluorescence subtraction | `saxsabs --help` |
-| **SAXSAbs Workbench** | interactive `K` calibration, batch processing, external-1D scaling | `saxsabs-workbench --lang en` |
-| **Strict BL19B2 runner** | campaign inputs under current BL19B2 conventions | [batch runbook](docs/bl19b2_abs2d_batch_runbook.md) |
-| **Python API** | reusable scientific calculations and file I/O | [API reference](docs/api.md) |
+| **Command line** | Normalization, header and profile parsing, 1D calibration, subtraction, and scripted workflows | `saxsabs --help` |
+| **Python API** | Reusing calculations, parsers, and output writers | [API reference](docs/api.md) |
+| **SAXSAbs Workbench** | Interactive calibration, external 1D scaling, and desktop workflows | Install `.[gui]`, then run `saxsabs-workbench --lang en` |
+| **Strict BL19B2 runner** | Detector-image workflows under BL19B2 conventions | [Batch runbook](docs/bl19b2_abs2d_batch_runbook.md) |
 
-The routes share numerical and I/O modules. The Workbench is an interactive
-front end. The BL19B2 runner is a separate, stricter campaign path.
+The Workbench is an interactive front end. For unattended campaigns, use the
+strict command-line workflow and its documented input contract.
 
 <p align="center">
-  <img src="paper/fig_workflow.png" width="100%" alt="Package architecture from inputs and interfaces through the scientific core to absolute-scale, canSAS, and NXcanSAS outputs, with required checks before calibrated export.">
+  <img src="assets/readme/workflow.svg" width="100%" alt="SAXS data and metadata pass through the Python API, command line, Workbench, or strict BL19B2 workflow; shared calibration and state checks produce absolute-intensity profiles and traceable exports.">
 </p>
 
 ## Workbench
 
+Install the GUI extra and launch the English interface with:
+
+```bash
+python -m pip install -e ".[gui]"
+saxsabs-workbench --lang en
+```
+
+The Workbench provides interactive calibration, external 1D scaling, and
+batch-processing tools. Its current interface is shown below; the strict BL19B2
+runbook describes the separate campaign workflow.
+
 <p align="center">
-  <img src="assets/readme/workbench.png" width="82%" alt="SAXSAbs Workbench in English at launch, with K-calibration file inputs, physical parameters, and an empty plotting area.">
+  <img src="assets/readme/workbench.png" width="92%" alt="SAXSAbs Workbench launch view showing calibration inputs and physical parameters; the plotting area is empty and contains no measurement data.">
 </p>
 
-Install `.[gui]` and run `saxsabs-workbench --lang en`. The window covers `K`
-calibration, 2D batch processing, external-1D scaling, and built-in help. On
-Windows, `py saxsabs_workbench.py --lang en` launches the same application.
+## Reproducible 2D example
 
-## Reproducible example
-
-The bundled example plants deterministic synthetic dark, background, standard,
-and sample frames on a 9×9 array, subtracts a NIST blank in detector space,
-and reduces with a homemade integer-bin radial average:
+Run the deterministic synthetic workflow:
 
 ```bash
 python examples/minimal_2d/run_minimal_2d_pipeline.py
 ```
 
-It writes CSV, TSV, and XML, plus HDF5 when `h5py` is installed. The script
-gates the standard profile as `relative` before `K`, writes `absolute_cm^-1`
-metadata, and checks that the XML exposes `i_abs` rather than `i_rel`.
-Acceptance in `summary.json` requires `k_relative_error < 0.005` and
-`sample_max_relative_error < 0.01`. Construction details are in the
-[example documentation](examples/minimal_2d/README.md).
+It creates separate synthetic dark, blank, standard, and sample detector frames
+on a 9×9 array, then checks the 2D-to-1D-to-absolute-intensity path. The example
+uses a small, homemade integer-bin radial average. This is not pyFAI
+integration, a BL19B2 campaign test, or measured-beamline validation. It
+recovers the planted `K` and sample curve within the acceptance limits recorded
+in `summary.json`, and writes CSV, TSV, and canSAS1d XML. NXcanSAS HDF5 is added
+when `h5py` is installed. See the
+[example README](examples/minimal_2d/README.md) for its inputs and expected files.
 
 <p align="center">
-  <img src="assets/readme/kfactor-demo.png" width="92%" alt="Synthetic K-factor demonstration: panel a, NIST SRM 3600 reference and rescaled measured profile; panel b, inlier ratios, rejected outliers, and K = 0.0350.">
+  <img src="assets/readme/kfactor-demo.png" width="92%" alt="Synthetic calibration example showing a reference curve, a scaled measurement, inlier ratios, rejected outliers, and the fitted K factor.">
 </p>
 
-## Records and outputs
+## Scope and validation
 
-- reference-derived `K` using NIST SRM 3600, water, or a supplied profile
-  (median ratio after MAD filtering)
-- explicit `raw_counts`, `relative`, `absolute_cm^-1`, and `ambiguous` states
-- transmission, thickness, monitor semantics, units, and applied corrections
-- partial uncertainty status, without substituting zero for unknown terms
-- source identity where available, calibration context, and processing metadata
-- CSV/TSV, canSAS1d XML, and optional NXcanSAS HDF5
+Absolute calibration depends on a suitable reference, detector geometry, monitor
+semantics, transmission, thickness, and instrument-specific metadata. AbsSAXS
+records supplied calibration context and checks whether required inputs are
+present and compatible. Automated tests and the
+[manual verification checklist](examples/manual-verification.md) provide
+reproducible software checks without private beamline files; they do not
+establish that experiment-specific inputs are valid.
 
-## Scope and limitations
+## Documentation and support
 
-Absolute calibration still depends on a suitable reference, detector geometry,
-monitor semantics, transmission, thickness, and instrument-specific
-provenance. The strict 2D workflow currently follows BL19B2 conventions. The
-Workbench does not implement that campaign contract.
+- [API and command-line reference](docs/api.md)
+- [Architecture and supported boundaries](docs/architecture.md)
+- [BL19B2 batch runbook](docs/bl19b2_abs2d_batch_runbook.md)
+- [Minimal synthetic 2D example](examples/minimal_2d/README.md)
+- [Manual verification checklist](examples/manual-verification.md)
+- [Reviewer FAQ](docs/reviewer-faq.md)
+- [Changelog](CHANGELOG.md)
 
-The 9×9 example recovers a planted synthetic `K` and sample curve. It is
-not pyFAI integration, BL19B2 campaign validation, measured-beamline
-validation, or independent third-party format validation.
+Report reproducible bugs or propose features through the
+[issue tracker](https://github.com/D-sudoasd/AbsSAXS/issues). Please use
+anonymized, portable examples and do not post beamline-private data, credentials,
+or large generated outputs. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+contribution guidance, and the [Code of Conduct](CODE_OF_CONDUCT.md) for
+community expectations.
 
-canSAS1d and NXcanSAS layouts are covered by project-local round-trip tests.
-An offline check on 15 August 2026 validated the deterministic example
-against the official canSAS1d 1.1 XSD and punx 0.3.5 with its bundled v2018.5
-definitions; that check is not in CI. Current NeXus definitions and
-third-party consumers have not been verified.
+## 中文快速开始
 
-## Documentation
+AbsSAXS 的 Python 包和命令行程序名为 `saxsabs`，用于估计 SAXS 绝对强度
+标定因子 `K`，并记录强度状态及相关校正信息。核心安装和示例命令如下：
 
-- [API reference](docs/api.md): public functions, inputs, outputs, and boundaries
-- [Architecture](docs/architecture.md): module responsibilities and interface limits
-- [BL19B2 runbook](docs/bl19b2_abs2d_batch_runbook.md): strict 2D campaign path
-- [Manual verification](examples/manual-verification.md): GUI and workflow checks
-- [Reviewer FAQ](docs/reviewer-faq.md): evidence, scope, and known limitations
-- [Changelog](CHANGELOG.md): version history
-
-JOSS submission gates and author-confirmation records live in
-[SUBMISSION_READINESS.md](SUBMISSION_READINESS.md) and `docs/`. They are not
-required to install or run the software.
-
-## Development
-
-The [continuous-integration workflow](https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml)
-tests the configured Python and operating-system matrix.
-
-```bash
-python -m pip install -e ".[dev,gui,bl19b2,hdf5]"
-pytest -q
-ruff check SASAbs.py saxs_mpl_style.py src tests paper/*.py scripts/*.py
+```powershell
+py -m pip install -e .
+saxsabs norm-factor --mode rate --exp 1.0 --mon 100000 --trans 0.8
+saxsabs estimate-k --meas examples/k_measured.csv --ref examples/k_reference.csv --qmin 0.01 --qmax 0.2
 ```
 
-Report reproducible problems on the
-[issue tracker](https://github.com/D-sudoasd/AbsSAXS/issues). Questions that
-are neither a defect nor a feature proposal can go to the same tracker or to
-the maintainers listed in [CITATION.cff](CITATION.cff). Read
-[CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Project
-participation follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+第二组曲线是合成示例数据，预期 `k_factor` 为 `2.0`，不是同步辐射束线
+测量结果。`rate` 模式下 `MON` 为计数率（counts/s），`exp` 为秒；
+`integrated` 模式下 `MON` 为该次采集中累计的监测计数。两种模式中的探测器
+数据均为累计计数。桌面工作台需要安装可选依赖
+`py -m pip install -e ".[gui]"`，再运行 `saxsabs-workbench --lang zh`。
+完整参数和适用边界见[命令行与 API 说明](docs/api.md)。
 
 ## Citation
 
-For the project as a whole, use the Zenodo concept DOI:
-
-> Gong, D. *SASAbs*. https://doi.org/10.5281/zenodo.19687103
-
-Use a release-specific DOI only for the archived release it identifies.
-Machine-readable metadata are in [CITATION.cff](CITATION.cff).
+The [CITATION.cff](CITATION.cff) file provides machine-readable citation
+metadata. The DOI badge links to the Zenodo concept DOI for the project; use a
+version-specific DOI when citing an archived release.
 
 ## License
 

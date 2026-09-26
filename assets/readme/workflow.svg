@@ -1,44 +1,272 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
-  <title id="title">saxsabs entry points and shared processing core</title>
-  <desc id="desc">CLI utilities, the desktop Workbench, the strict BL19B2 runner, and the Python API share calibration, I/O, and intensity-state checks before writing absolute I(q), canSAS1d XML, and optional NXcanSAS HDF5.</desc>
-  <rect width="1200" height="280" rx="22" fill="#071218"/>
-  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
-    <text x="48" y="40" fill="#86A0B2" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" letter-spacing="2">ENTRY POINTS</text>
-    <path d="M48 56H1152" stroke="#2A3A45"/>
-
-    <g fill="#102028" stroke="#2A3A45">
-      <rect x="48" y="72" width="261" height="88" rx="12"/>
-      <rect x="329" y="72" width="261" height="88" rx="12"/>
-      <rect x="610" y="72" width="261" height="88" rx="12"/>
-      <rect x="891" y="72" width="261" height="88" rx="12"/>
-    </g>
-    <g fill="#F5F7F8" font-size="22" font-weight="650">
-      <text x="178" y="110" text-anchor="middle">CLI utilities</text>
-      <text x="459" y="110" text-anchor="middle">Workbench</text>
-      <text x="740" y="110" text-anchor="middle">BL19B2 runner</text>
-      <text x="1021" y="110" text-anchor="middle">Python API</text>
-    </g>
-    <g fill="#86A0B2" font-size="18">
-      <text x="178" y="138" text-anchor="middle">commands</text>
-      <text x="459" y="138" text-anchor="middle">interactive routes</text>
-      <text x="740" y="138" text-anchor="middle">strict campaign path</text>
-      <text x="1021" y="138" text-anchor="middle">package functions</text>
-    </g>
-
-    <g stroke="#506473" stroke-width="2" fill="none">
-      <path d="M178 160V184"/>
-      <path d="M459 160V184"/>
-      <path d="M740 160V184"/>
-      <path d="M1021 160V184"/>
-      <path d="M178 184H1021"/>
-    </g>
-    <circle cx="178" cy="184" r="4" fill="#5CA7D1"/>
-    <circle cx="459" cy="184" r="4" fill="#5CA7D1"/>
-    <circle cx="740" cy="184" r="4" fill="#5CA7D1"/>
-    <circle cx="1021" cy="184" r="4" fill="#5CA7D1"/>
-
-    <path d="M48 210H1152" stroke="#5CA7D1" stroke-width="3"/>
-    <text x="600" y="240" text-anchor="middle" fill="#B9C6CF" font-size="20">shared core: K estimation, intensity state, typed I/O</text>
-    <text x="600" y="266" text-anchor="middle" fill="#F5F7F8" font-size="20" font-weight="650">absolute I(q)  ·  canSAS1d XML  ·  NXcanSAS HDF5</text>
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="396.850394pt" height="255.6pt" viewBox="0 0 396.850394 255.6" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-09-26T19:55:43.586575</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 255.6
+L 396.850394 255.6
+L 396.850394 0
+L 0 0
+z
+" style="fill: #ffffff"/>
   </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 18.212987 35.339256
+L 378.637407 35.339256
+Q 381.274016 35.339256 381.274016 32.578776
+L 381.274016 16.291944
+Q 381.274016 13.531464 378.637407 13.531464
+L 18.212987 13.531464
+Q 15.576378 13.531464 15.576378 16.291944
+L 15.576378 32.578776
+Q 15.576378 35.339256 18.212987 35.339256
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #eef1f3; stroke: #60737d; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 12.280617 108.906048
+L 102.452637 108.906048
+Q 105.089246 108.906048 105.089246 106.145568
+L 105.089246 80.749152
+Q 105.089246 77.988672 102.452637 77.988672
+L 12.280617 77.988672
+Q 9.644008 77.988672 9.644008 80.749152
+L 9.644008 106.145568
+Q 9.644008 108.906048 12.280617 108.906048
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #eaf2f8; stroke: #24618a; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 12.280617 164.115648
+L 102.452637 164.115648
+Q 105.089246 164.115648 105.089246 161.355168
+L 105.089246 135.958752
+Q 105.089246 133.198272 102.452637 133.198272
+L 12.280617 133.198272
+Q 9.644008 133.198272 9.644008 135.958752
+L 9.644008 161.355168
+Q 9.644008 164.115648 12.280617 164.115648
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #eaf2f8; stroke: #24618a; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 12.280617 219.325248
+L 102.452637 219.325248
+Q 105.089246 219.325248 105.089246 216.564768
+L 105.089246 191.168352
+Q 105.089246 188.407872 102.452637 188.407872
+L 12.280617 188.407872
+Q 9.644008 188.407872 9.644008 191.168352
+L 9.644008 216.564768
+Q 9.644008 219.325248 12.280617 219.325248
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #eaf2f8; stroke: #24618a; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 130.928012 104.351256
+L 265.922382 104.351256
+Q 268.55899 104.351256 268.55899 101.590776
+L 268.55899 79.782984
+Q 268.55899 77.022504 265.922382 77.022504
+L 130.928012 77.022504
+Q 128.291403 77.022504 128.291403 79.782984
+L 128.291403 101.590776
+Q 128.291403 104.351256 130.928012 104.351256
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #e5f1eb; stroke: #247451; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 130.928012 142.997976
+L 265.922382 142.997976
+Q 268.55899 142.997976 268.55899 140.237496
+L 268.55899 118.429704
+Q 268.55899 115.669224 265.922382 115.669224
+L 130.928012 115.669224
+Q 128.291403 115.669224 128.291403 118.429704
+L 128.291403 140.237496
+Q 128.291403 142.997976 130.928012 142.997976
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #e5f1eb; stroke: #247451; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 130.928012 181.644696
+L 265.922382 181.644696
+Q 268.55899 181.644696 268.55899 178.884216
+L 268.55899 157.076424
+Q 268.55899 154.315944 265.922382 154.315944
+L 130.928012 154.315944
+Q 128.291403 154.315944 128.291403 157.076424
+L 128.291403 178.884216
+Q 128.291403 181.644696 130.928012 181.644696
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #e5f1eb; stroke: #247451; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 130.928012 230.367168
+L 265.922382 230.367168
+Q 268.55899 230.367168 268.55899 227.606688
+L 268.55899 196.689312
+Q 268.55899 193.928832 265.922382 193.928832
+L 130.928012 193.928832
+Q 128.291403 193.928832 128.291403 196.689312
+L 128.291403 227.606688
+Q 128.291403 230.367168 130.928012 230.367168
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #e5f1eb; stroke: #247451; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 294.397756 114.84108
+L 384.569777 114.84108
+Q 387.206386 114.84108 387.206386 112.0806
+L 387.206386 80.33508
+Q 387.206386 77.5746 384.569777 77.5746
+L 294.397756 77.5746
+Q 291.761148 77.5746 291.761148 80.33508
+L 291.761148 112.0806
+Q 291.761148 114.84108 294.397756 114.84108
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #f0eaf4; stroke: #725078; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 294.397756 167.2902
+L 384.569777 167.2902
+Q 387.206386 167.2902 387.206386 164.52972
+L 387.206386 132.7842
+Q 387.206386 130.02372 384.569777 130.02372
+L 294.397756 130.02372
+Q 291.761148 130.02372 291.761148 132.7842
+L 291.761148 164.52972
+Q 291.761148 167.2902 294.397756 167.2902
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #f0eaf4; stroke: #725078; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 294.397756 219.73932
+L 384.569777 219.73932
+Q 387.206386 219.73932 387.206386 216.97884
+L 387.206386 185.23332
+Q 387.206386 182.47284 384.569777 182.47284
+L 294.397756 182.47284
+Q 291.761148 182.47284 291.761148 185.23332
+L 291.761148 216.97884
+Q 291.761148 219.73932 294.397756 219.73932
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #f0eaf4; stroke: #725078; stroke-width: 0.8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 108.879146 148.65696
+Q 117.347139 148.65696 124.808901 148.65696
+" clip-path="url(#p25c6288ed2)" style="fill: none; stroke: #0072b2; stroke-width: 0.9; stroke-linecap: round"/>
+    <path d="M 121.608901 147.05696
+L 124.808901 148.65696
+L 121.608901 150.25696
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #0072b2; stroke: #0072b2; stroke-width: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 271.031197 148.65696
+Q 280.158694 148.65696 288.279961 148.65696
+" clip-path="url(#p25c6288ed2)" style="fill: none; stroke: #0072b2; stroke-width: 0.9; stroke-linecap: round"/>
+    <path d="M 285.079961 147.05696
+L 288.279961 148.65696
+L 285.079961 150.25696
+z
+" clip-path="url(#p25c6288ed2)" style="fill: #0072b2; stroke: #0072b2; stroke-width: 0.9; stroke-linecap: round"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 11.225973 57.009024
+L 103.507281 57.009024
+" clip-path="url(#p25c6288ed2)" style="fill: none; stroke: #eaf2f8; stroke-width: 3.2; stroke-linecap: round"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 136.464891 57.009024
+L 260.385503 57.009024
+" clip-path="url(#p25c6288ed2)" style="fill: none; stroke: #e5f1eb; stroke-width: 3.2; stroke-linecap: round"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 293.343113 57.009024
+L 385.62442 57.009024
+" clip-path="url(#p25c6288ed2)" style="fill: none; stroke: #f0eaf4; stroke-width: 3.2; stroke-linecap: round"/>
+   </g>
+   <g id="text_1">
+    <text style="font-size: 8.1px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #23343d" x="198.425197" y="26.531235" transform="rotate(-0 198.425197 26.531235)">Entry points: Python API · CLI · Workbench · strict BL19B2 batch workflow</text>
+   </g>
+   <g id="text_2">
+    <text style="font-weight: 700; font-size: 9.2px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="57.366627" y="50.284253" transform="rotate(-0 57.366627 50.284253)">Inputs</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 9.2px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="198.425197" y="50.27994" transform="rotate(-0 198.425197 50.27994)">Shared processing</text>
+   </g>
+   <g id="text_4">
+    <text style="font-weight: 700; font-size: 9.2px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle" x="339.483767" y="50.340315" transform="rotate(-0 339.483767 50.340315)">Outputs</text>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(23.355377 91.284735)">2D detector frames</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(15.344752 99.746235)">and instrument headers</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(22.464127 146.543085)">External 1D profiles</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(14.233502 155.004585)">and correction metadata</text>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(27.205377 197.473185)">NIST SRM 3600,</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(26.016627 205.934685)">water, or supplied</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(29.577877 214.396185)">reference curve</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(159.519572 88.524255)">Parse, normalize, and</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(172.854572 96.985755)">validate inputs</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(152.395822 127.1241)">Reduce detector data and</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(163.297697 135.5856)">integrate with pyFAI</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(152.176447 165.723945)">Estimate K and propagate</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(159.959572 174.279195)">supported uncertainty</text>
+   </g>
+   <g id="text_11">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(161.520822 205.651125)">Check intensity state</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(160.187697 214.206375)">and correction history</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(156.399572 222.878625)">before calibrated output</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(303.688767 94.093965)">Absolute 1D profiles</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(299.236892 102.555465)">and calibrated 2D data</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(308.060642 146.494335)">canSAS XML and</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(307.917517 154.955835)">NXcanSAS HDF5</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(304.804392 194.712705)">Calibration records,</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(304.136267 203.174205)">source hashes, QC,</text>
+    <text style="font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #23343d" transform="translate(312.359392 211.635705)">and run reports</text>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p25c6288ed2">
+   <rect x="5.952756" y="5.112" width="384.944882" height="241.542"/>
+  </clipPath>
+ </defs>
 </svg>

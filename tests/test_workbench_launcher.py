@@ -84,6 +84,12 @@ def test_wheel_includes_legacy_gui_module(tmp_path: Path):
             "__pycache__",
             ".pytest_cache",
             ".ruff_cache",
+            ".audit-work",
+            ".tmp-*",
+            ".tmp_*",
+            ".venv",
+            "venv",
+            "env",
         ),
     )
     wheelhouse.mkdir()

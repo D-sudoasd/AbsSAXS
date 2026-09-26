@@ -1,8 +1,8 @@
 # BL19B2 Absolute-Corrected 2D SAXS Batch Runbook
 
 This runbook describes the BL19B2 TIFF-to-absolute-2D workflow implemented by
-`saxsabs bl19b2-abs2d`. It is intended for future beamtime reuse and for AI or
-human operators who need to repeat the same processing on a new BL19B2 dataset.
+`saxsabs bl19b2-abs2d`. It documents the input layout and processing contract
+for future BL19B2 beamtime datasets.
 
 ## Inputs
 
@@ -24,11 +24,25 @@ Defaults:
 
 - `ABS` in the TIFF header is treated as sample transmission.
 - `--monitor-mode rate` uses `Exposure_time * MON * ABS`; `integrated` uses
-  `MON * ABS`. The mode must be selected explicitly.
+  `MON * ABS`. The mode must be selected explicitly. In `rate` mode, `MON` is a
+  beam-monitor count rate in counts/s and `Exposure_time` is in seconds. In
+  `integrated` mode, `MON` is the monitor count integrated over the acquisition
+  interval. Detector TIFF values are accumulated counts in both modes; `ABS` is
+  the sample transmission.
 - Choose exactly one sample-thickness strategy: an explicit material- and
   energy-specific `--mu`, or `--sample-thickness-cm`.
-- SRM 3600 uses the NIST certified coupon thickness `0.1055 cm` unless an
-  explicit standard thickness is recorded.
+- For NIST SRM 3600, use the certified mean coupon thickness `1.055 mm`
+  (`0.1055 cm`); do not substitute a separate micrometer measurement of an
+  individual coupon. Coupon-to-coupon thickness variability is already included
+  in the certified reference uncertainty (Table 1 in the [NIST SRM 3600
+  certificate](https://tsapps.nist.gov/srmext/certificates/3600.pdf)). Set
+  `--standard-thickness-relative-standard-uncertainty 0.0` when there is no
+  additional independent thickness uncertainty, so the same coupon variability
+  is not counted twice. Use a nonzero value only for an independently
+  characterized source that is absent from the reference uncertainty and has
+  negligible covariance with it. For a custom standard, provide a separate
+  relative thickness uncertainty only when its reference uncertainty excludes
+  specimen thickness and covariance with that uncertainty is negligible.
 - `GC001.tif` is the formal glassy carbon standard.
 - `BG001.tif` is the no-sample NIST blank. Its recorded transmission must be
   close to one and is used only as a definition check, not as a divisor.
@@ -117,7 +131,8 @@ sufficiently precise.
 Optional uncertainty inputs are
 `--monitor-relative-standard-uncertainty`,
 `--sample-thickness-relative-standard-uncertainty` (fixed-thickness mode),
-`--standard-thickness-relative-standard-uncertainty` (calibration coupon),
+`--standard-thickness-relative-standard-uncertainty` (independent contribution
+from standard thickness),
 `--standard-transmission-abs-uncertainty`,
 `--standard-monitor-relative-standard-uncertainty`,
 `--calibration-background-monitor-relative-standard-uncertainty`,

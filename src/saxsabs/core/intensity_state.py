@@ -231,34 +231,87 @@ def assess_intensity_state(profile: Mapping[str, object]) -> IntensityStateAsses
     provenance = provenance if isinstance(provenance, Mapping) else {}
     evidence: list[str] = []
 
-    if "intensity_state" in provenance:
-        explicit_state_value = provenance["intensity_state"]
-    else:
-        explicit_state_value = profile.get("intensity_state")
-    explicit_state = _state_from_metadata(explicit_state_value)
-    explicit_state_is_nonempty = (
-        explicit_state_value is not None and bool(str(explicit_state_value).strip())
-    )
-    invalid_explicit_state = explicit_state_is_nonempty and explicit_state is None
-    if explicit_state is not None:
-        evidence.append(f"metadata:intensity_state={explicit_state.value}")
-    elif invalid_explicit_state:
+    explicit_states: set[IntensityState] = set()
+    invalid_explicit_state = False
+    for metadata in (profile, provenance):
+        if "intensity_state" not in metadata:
+            continue
+        metadata_state_value = metadata["intensity_state"]
+        metadata_state = _state_from_metadata(metadata_state_value)
+        is_nonempty = (
+            metadata_state_value is not None
+            and bool(str(metadata_state_value).strip())
+        )
+        if metadata_state is not None:
+            explicit_states.add(metadata_state)
+        elif is_nonempty:
+            invalid_explicit_state = True
+
+    state_metadata_conflict = len(explicit_states) > 1
+    explicit_state_is_ambiguous = IntensityState.AMBIGUOUS in explicit_states
+    if state_metadata_conflict:
+        evidence.append("conflicting_intensity_state_metadata")
+    elif explicit_states:
+        state_value = next(iter(explicit_states))
+        evidence.append(f"metadata:intensity_state={state_value.value}")
+    if invalid_explicit_state:
         evidence.append("invalid_metadata:intensity_state")
 
+    profile_corrections_present = "corrections_applied" in profile
+    provenance_corrections_present = "corrections_applied" in provenance
+    profile_corrections = (
+        parse_correction_ledger(profile["corrections_applied"])
+        if profile_corrections_present
+        else ()
+    )
+    provenance_corrections = (
+        parse_correction_ledger(provenance["corrections_applied"])
+        if provenance_corrections_present
+        else ()
+    )
+    correction_metadata_conflict = (
+        profile_corrections_present
+        and provenance_corrections_present
+        and profile_corrections != provenance_corrections
+    )
+    correction_ledger = (
+        provenance_corrections
+        if provenance_corrections_present
+        else profile_corrections
+    )
+
+    profile_repeat_present = "do_not_repeat" in profile
+    provenance_repeat_present = "do_not_repeat" in provenance
+    profile_repeat_ledger = (
+        parse_correction_ledger(profile["do_not_repeat"])
+        if profile_repeat_present
+        else ()
+    )
+    provenance_repeat_ledger = (
+        parse_correction_ledger(provenance["do_not_repeat"])
+        if provenance_repeat_present
+        else ()
+    )
+    repeat_metadata_conflict = (
+        profile_repeat_present
+        and provenance_repeat_present
+        and profile_repeat_ledger != provenance_repeat_ledger
+    )
+    repeat_ledger = (
+        provenance_repeat_ledger if provenance_repeat_present else profile_repeat_ledger
+    )
     corrections_present = (
-        "corrections_applied" in provenance or "corrections_applied" in profile
+        profile_corrections_present or provenance_corrections_present
     )
-    do_not_repeat_present = "do_not_repeat" in provenance or "do_not_repeat" in profile
-    correction_ledger = parse_correction_ledger(
-        provenance.get("corrections_applied", profile.get("corrections_applied"))
-    )
-    repeat_ledger = parse_correction_ledger(
-        provenance.get("do_not_repeat", profile.get("do_not_repeat"))
-    )
+    do_not_repeat_present = profile_repeat_present or provenance_repeat_present
     ledger_conflict = (
-        corrections_present
-        and do_not_repeat_present
-        and set(correction_ledger) != set(repeat_ledger)
+        (
+            corrections_present
+            and do_not_repeat_present
+            and correction_ledger != repeat_ledger
+        )
+        or correction_metadata_conflict
+        or repeat_metadata_conflict
     )
     if correction_ledger:
         evidence.append("ledger:corrections_applied=" + ",".join(correction_ledger))
@@ -266,6 +319,8 @@ def assess_intensity_state(profile: Mapping[str, object]) -> IntensityStateAsses
         evidence.append("ledger:do_not_repeat=" + ",".join(repeat_ledger))
     if ledger_conflict:
         evidence.append("conflicting_correction_ledgers")
+    if correction_metadata_conflict or repeat_metadata_conflict:
+        evidence.append("conflicting_top_level_and_nested_ledgers")
 
     semantic_states: set[IntensityState] = set()
     raw_i_col = profile.get("i_col", "")
@@ -280,12 +335,28 @@ def assess_intensity_state(profile: Mapping[str, object]) -> IntensityStateAsses
         semantic_states.add(IntensityState.RAW_COUNTS)
         evidence.append(f"column:{profile.get('i_col')}")
 
-    raw_intensity_unit = profile.get(
-        "intensity_unit", provenance.get("intensity_unit", "")
-    )
-    if is_cm_inv_intensity_unit(raw_intensity_unit):
-        semantic_states.add(IntensityState.ABSOLUTE_CM_INV)
-        evidence.append(f"unit:{raw_intensity_unit}")
+    intensity_unit_records: list[tuple[str, str]] = []
+    for source_name, metadata in (("profile", profile), ("operator_provenance", provenance)):
+        raw_unit = metadata.get("intensity_unit")
+        unit_text = str(raw_unit or "").strip()
+        if unit_text:
+            intensity_unit_records.append((source_name, unit_text))
+            if is_cm_inv_intensity_unit(unit_text):
+                semantic_states.add(IntensityState.ABSOLUTE_CM_INV)
+                evidence.append(f"unit:{unit_text}")
+            else:
+                evidence.append(f"declared_unit:{source_name}:{unit_text}")
+
+    # Normalize only units already recognized by the shared cm^-1 helper.
+    # Other tokens remain opaque; this detects contradictory declarations
+    # without inventing conversions or a second unit vocabulary.
+    unit_semantics = {
+        "cm^-1" if is_cm_inv_intensity_unit(unit) else _normalized_token(unit)
+        for _, unit in intensity_unit_records
+    }
+    unit_metadata_conflict = len(unit_semantics) > 1
+    if unit_metadata_conflict:
+        evidence.append("conflicting_intensity_unit_metadata")
 
     # ``corrections_applied`` is evidence about the physical state.  The
     # ``do_not_repeat`` ledger is an execution guard and may be stricter than
@@ -294,15 +365,27 @@ def assess_intensity_state(profile: Mapping[str, object]) -> IntensityStateAsses
     # checks.
     if ABSOLUTE_CORRECTIONS.issubset(correction_ledger):
         semantic_states.add(IntensityState.ABSOLUTE_CM_INV)
-    if explicit_state is not None:
-        semantic_states.add(explicit_state)
+    absolute_state_claim = (
+        IntensityState.ABSOLUTE_CM_INV in semantic_states
+        or IntensityState.ABSOLUTE_CM_INV in explicit_states
+        or ABSOLUTE_CORRECTIONS.issubset(correction_ledger)
+    )
+    invalid_absolute_unit = absolute_state_claim and any(
+        not is_cm_inv_intensity_unit(unit) for _, unit in intensity_unit_records
+    )
+    if invalid_absolute_unit:
+        evidence.append("invalid_metadata:intensity_unit")
+    semantic_states.update(explicit_states)
 
     non_ambiguous = {state for state in semantic_states if state is not IntensityState.AMBIGUOUS}
     if (
         len(non_ambiguous) > 1
-        or explicit_state is IntensityState.AMBIGUOUS
+        or explicit_state_is_ambiguous
+        or state_metadata_conflict
         or invalid_explicit_state
         or ledger_conflict
+        or unit_metadata_conflict
+        or invalid_absolute_unit
     ):
         state = IntensityState.AMBIGUOUS
         evidence.append("conflict_or_explicit_ambiguity")
