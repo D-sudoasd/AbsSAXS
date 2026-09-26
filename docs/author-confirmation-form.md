@@ -1,11 +1,12 @@
 # Author confirmation form
 
 The corresponding author's declarations for the 13 September 2026 candidate
-are carried forward with their original date; they do not need to be confirmed
-again. The current candidate is prepared for submission on 26 September 2026,
-and the paper date is aligned to that planned date. If submission moves to a
-different calendar day, update the paper date and readiness record. Do not
-infer undeclared facts.
+are carried forward with their original date. On 26 September, the author
+clarified that AI assistance before this preparation round was limited to
+coding. The current candidate is prepared for submission on 26 September 2026,
+and the paper date is aligned to that date. If submission moves to a different
+calendar day, update the paper date and readiness record. Do not infer
+undeclared facts.
 
 ## Authorship and correspondence
 
@@ -30,24 +31,26 @@ infer undeclared facts.
 ## AI usage disclosure
 
 The following inventory records the corresponding author's declaration for
-the 13 September 2026 candidate. The earlier exact versions were not retained.
-The recorded author review covered the outputs in that candidate only.
+the 13 September 2026 candidate, as clarified on 26 September. The earlier
+exact versions were not retained. These tools assisted with coding only; they
+were not used to write the earlier candidate's paper or documentation, or to
+create its figures.
 
-| Product | Model/version/date | Code/docs/paper locations | Nature and scope |
+| Product | Model/version/date | Location | Nature and scope |
 | --- | --- | --- | --- |
-| GitHub Copilot | version not retained | code, tests, docs | refactoring, scaffolding |
-| Anthropic Claude | version not retained | code, docs, paper | refactoring, documentation, editing |
-| OpenAI Codex | version not retained | code, docs, paper | refactoring, tests, documentation, editing |
-| xAI Grok | version not retained | docs, paper | homepage and manuscript editing |
+| GitHub Copilot | version not retained | code | coding assistance |
+| Anthropic Claude | version not retained | code | coding assistance |
+| OpenAI Codex | version not retained | code | coding assistance |
+| xAI Grok | version not retained | code | coding assistance |
 | Other, through 13 September | none declared | | |
 
-The earlier author record includes this confirmation for the 13 September 2026
-candidate:
+The author confirms that this historical disclosure is limited to coding
+assistance. The human-review declaration for the 13 September 2026 candidate
+covered the AI-assisted code in that candidate:
 
-> All human authors reviewed, edited, and validated every AI-assisted output
-> included in the submitted software, documentation, figures, and manuscript.
-> The human authors made the core scientific, architectural, and design
-> decisions and accept full responsibility for the submission.
+> The sole author reviewed, edited, and validated the AI-assisted code. The
+> author made the core scientific and software-design decisions and accepts
+> full responsibility for the software.
 
 - Confirmation recorded for the 13 September 2026 candidate: yes
 
@@ -65,11 +68,12 @@ result or a data-derived figure.
 
 Technical verification performed for this candidate is recorded in the dated
 desktop submission report, including the source, test, image-layout, package,
-installation, and CI checks that have completed. The human author still needs
-to inspect the finished package, review, edit, and validate all AI-assisted
-outputs, and confirm the core design decisions. No new author confirmation of
-that review is recorded here; automated and agent-performed checks do not
-substitute for it.
+installation, and CI checks that have completed. On 26 September 2026, the
+corresponding author confirmed that they reviewed, edited, and validated all
+AI-assisted outputs in this candidate, made the core scientific and software
+design decisions, and accept responsibility for the submitted materials.
+Automated checks support that review but do not replace the author's
+responsibility.
 
 ## Funding, acknowledgements, sponsor role, and competing interests
 
@@ -96,11 +100,10 @@ substitute for it.
   commit, current CI run URLs, repository-identity check, package/PDF results,
   and outputs from both readiness commands. Keep those commit-specific facts
   in that record rather than in this reusable form.
-- One author-only statement remains for this revision: after inspecting the
-  finished submission package, the human author must affirm that all new
+- The corresponding author confirmed on 26 September 2026 that all new
   AI-assisted outputs since 13 September were reviewed, edited, and validated,
-  and that the core design decisions are human decisions. The earlier
-  13 September confirmation does not cover those new outputs.
+  and that the core scientific and software-design decisions are human
+  decisions. The author accepts responsibility for this candidate.
 
 The software tag, GitHub Release, and exact-version archive DOI are created
 after successful JOSS review and recorded in the review issue before acceptance.

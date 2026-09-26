@@ -145,9 +145,9 @@ request.
 # AI usage disclosure
 
 Earlier project work used GitHub Copilot, Anthropic Claude, OpenAI Codex, and
-xAI Grok for code refactoring, test scaffolding, documentation, figure
-generation, and manuscript editing; exact versions of those earlier tools
-were not retained. During this submission-preparation pass, OpenAI Codex
+xAI Grok only for coding assistance, including code refactoring and test
+scaffolding; exact versions of those earlier tools were not retained. During
+this submission-preparation pass, OpenAI Codex
 (GPT-6) assisted with manuscript editing, figure-code revisions, input-
 validation changes and tests, packaging and CI updates, README and
 documentation changes, and reference verification. OpenAI image generation, with a
@@ -159,8 +159,10 @@ Software descriptions were checked against the implementation and project
 documentation; targeted tests were run; and reference metadata and DOIs were
 checked against publisher, NIST, and Zenodo records. Example inputs and scripts
 were checked to distinguish synthetic demonstrations from experimental
-validation. The corresponding author must review and approve all AI-assisted
-code, documentation, manuscript text, and images before submission.
+validation. The author reviewed, edited, and validated all AI-assisted code,
+documentation, manuscript text, and images; made the core scientific and
+software-design decisions; and accepts full responsibility for the software
+and manuscript.
 
 # Author contributions
 
