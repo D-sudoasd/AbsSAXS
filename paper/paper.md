@@ -147,9 +147,8 @@ request.
 Earlier project work used GitHub Copilot, Anthropic Claude, OpenAI Codex, and
 xAI Grok only for coding assistance, including code refactoring and test
 scaffolding; exact versions of those earlier tools were not retained. During
-this submission-preparation pass, OpenAI Codex
-(GPT-6) assisted with manuscript editing, figure-code revisions, input-
-validation changes and tests, packaging and CI updates, README and
+this submission-preparation pass, OpenAI Codex (GPT-6) assisted with manuscript
+editing, figure scripts, input validation and tests, packaging and CI updates, README and
 documentation changes, and reference verification. OpenAI image generation, with a
 version not exposed by the service, produced the conceptual README cover.
 That cover is illustrative and contains no experimental data. Figures in
@@ -161,7 +160,7 @@ checked against publisher, NIST, and Zenodo records. Example inputs and scripts
 were checked to distinguish synthetic demonstrations from experimental
 validation. The author reviewed, edited, and validated all AI-assisted code,
 documentation, manuscript text, and images; made the core scientific and
-software-design decisions; and accepts full responsibility for the software
+software design decisions; and accepts full responsibility for the software
 and manuscript.
 
 # Author contributions
