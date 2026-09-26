@@ -43,11 +43,11 @@ documentation.
       SAXS/USAXS research workflow. Gong et al., *Acta Materialia* 316 (2026)
       122455 is contextual research evidence and does not cite the software;
       do not describe it as a software citation.
-- [ ] The final paper gives concise, specific research-use evidence and does
+- [x] The final paper gives concise, specific research-use evidence and does
       not claim external adoption or a software citation without evidence.
-- [ ] The final submitted commit has a green full CI run and its test,
+- [x] The final submitted commit has a green full CI run and its test,
       distribution, and paper-PDF artifacts have been checked.
-- [ ] The public README, repository metadata, paper, submitted branch, exact
+- [x] The public README, repository metadata, paper, submitted branch, exact
       commit, and successful Actions run describe the same candidate.
 
 JOSS's current criteria require research use at minimum by the developers;
@@ -58,29 +58,30 @@ decides scope and significance based on the whole record.
 
 ## Paper format
 
-- [ ] Markdown paper with valid JOSS YAML metadata and the actual submission
+- [x] Markdown paper with valid JOSS YAML metadata and the actual submission
       date in `D Month YYYY` format.
-- [ ] Body is 750–1,750 words under the Pandoc count used by
-      `scripts/check_submission_readiness.py`.
-- [ ] Required sections: `Summary`, `Statement of need`, `State of the field`,
+- [x] Body is 1,211 words under the Pandoc count used by
+      `scripts/check_submission_readiness.py` (required range: 750–1,750).
+- [x] Required sections: `Summary`, `Statement of need`, `State of the field`,
       `Software design`, `Research impact statement`, `AI usage disclosure`,
       `Acknowledgements`, and `References`.
-- [ ] The paper explains the software for non-specialists, its target research
+- [x] The paper explains the software for non-specialists, its target research
       users, related software, design trade-offs, and research use. Keep API
       documentation in the repository documentation.
-- [ ] References include related software and full venue names, and the cited
-      archive DOI points to the exact reviewed version once it exists.
-- [ ] Acknowledgements describe funding and sponsor involvement, or state
+- [x] References include related software and full venue names. The exact
+      reviewed-version archive DOI will be added after JOSS review.
+- [x] Acknowledgements describe funding and sponsor involvement, or state
       accurately that there was no external funding.
-- [ ] AI disclosure covers software, documentation, figures, and manuscript
+- [x] AI disclosure covers software, documentation, figures, and manuscript
       assistance used through the final candidate; lists tools/models and
       versions where known, locations, and kinds of assistance; and describes
       the verification performed.
-- [ ] Before submission, the human author reviews, edits, and validates every
-      AI-assisted output in the final candidate and confirms the core design
-      decisions. The 13 September 2026 confirmation applies only to the earlier
-      candidate and does not attest to outputs added after that date.
-- [ ] The PDF generated from the final submitted commit by the JOSS Inara
+- [x] On 26 September 2026, the human author confirmed that they reviewed,
+      edited, and validated every AI-assisted output in the final candidate,
+      made the core scientific and software-design decisions, and accept
+      responsibility for the submission. Historical AI assistance was limited
+      to coding; the current preparation-round scope remains fully disclosed.
+- [x] The PDF generated from the final submitted commit by the JOSS Inara
       workflow is inspected. Older local or desktop PDFs do not validate a new
       paper revision.
 

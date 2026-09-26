@@ -41,12 +41,18 @@ The following author-controlled statements were supplied for the 13 September
 - No external funding; no competing interests declared.
 - Earlier AI tools declared by the author: GitHub Copilot, Anthropic Claude,
   OpenAI Codex, and xAI Grok. Exact earlier model versions were not retained.
+  On 26 September, the author clarified that these tools assisted with coding
+  only in the earlier work; they did not contribute to its paper,
+  documentation, or figures.
 
-These dated declarations are not evidence that the author has reviewed new
-AI-assisted prose, code, or artwork produced during the 26 September
-preparation. The current paper disclosure must cover the tools used in this
-round and state the verification actually performed. Do not carry the earlier
-review statement forward to new output without evidence.
+The 13 September human-review declaration applied to AI-assisted code in that
+candidate. It does not describe the broader AI assistance used during the
+26 September preparation, which is disclosed separately in the current paper.
+On 26 September, the corresponding author confirmed that they reviewed,
+edited, and validated all AI-assisted outputs in the current candidate, made
+the core scientific and software-design decisions, and accept responsibility
+for the submitted materials. The dated desktop validation record contains the
+commit-specific technical evidence.
 
 ## JOSS paper requirements
 
@@ -59,14 +65,14 @@ use and financial support, and keep API documentation in the repository docs
 rather than the paper.
 
 The AI disclosure must cover AI use in software development, documentation,
-and paper authoring. When AI tools were used, JOSS asks authors to describe how
-they were used and how the generated material's quality and correctness were
-checked. Report only verification that was actually completed. The current
-JOSS policy also requires human authors to confirm that they reviewed, edited,
-and validated all AI-assisted outputs and made the core design decisions. The
-13 September confirmation covers that earlier candidate only; an author review
-statement for new outputs in this round remains to be made after inspecting
-the finished package.
+figures, and paper authoring. When AI tools were used, JOSS asks authors to
+describe how they were used and how the generated material's quality and
+correctness were checked. Report only verification that was actually
+completed. The current JOSS policy also requires human authors to confirm
+that they reviewed, edited, and validated all AI-assisted outputs and made the
+core design decisions. The author recorded this confirmation for the current
+candidate on 26 September 2026; see the author confirmation form and dated
+desktop record.
 
 JOSS's current screening also asks for more than six months of public
 development for recently public projects, with activity over that period and
