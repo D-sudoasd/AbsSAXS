@@ -1,55 +1,116 @@
-# Submission readiness snapshot
+# JOSS submission readiness
 
-Updated: 13 September 2026
+Updated: 26 September 2026
 
-Review the current unreleased 2.0.0 source candidate on `main`; the stable
-archive is GitHub Release v1.1.1 and its release assets. `v2.0.0` remains
-unreleased: do not create its tag, GitHub Release, or Zenodo version archive
-until JOSS review completes.
+## Candidate and release state
 
-## Author-controlled statements (in `paper/paper.md`)
+The current source candidate is version `2.0.0`. There is no published
+`v2.0.0` release. GitHub's latest published release is `v1.1.1` (21 April
+2026), preceded by `v1.0.0`. The public repository was created on 25 February
+2026, so its public history exceeds six months on the date of this snapshot.
 
-- Sole author and corresponding author: Delun Gong, `dlgong@imr.ac.cn`,
-  ORCID 0000-0001-7877-7707.
-- Paper YAML date: 13 September 2026.
-- Research use: the author uses saxsabs as the absolute-intensity step for
-  SAXS/USAXS at SPring-8 BL19B2, including the campaign reported in Gong et al.,
-  Acta Materialia 316 (2026) 122455. That article does not cite saxsabs.
-  Beamline-private raw frames are not in the repository.
-- AI disclosure: GitHub Copilot, Anthropic Claude, OpenAI Codex, and xAI Grok;
-  earlier exact versions not retained; author reviewed outputs and remains
-  responsible.
-- Funding: no external funding. Competing interests: none.
+The exact candidate commit, successful CI run, inspected JOSS PDF, and package
+artifacts are recorded in the dated desktop submission package. Its validation
+record identifies the tested commit and artifact hashes. Re-run these checks
+if the source or paper changes. The package CI job builds an sdist and wheel,
+checks them with Twine, installs the wheel in a clean environment, and records
+both distributions as an Actions artifact.
 
-## Mechanical checks that remain at the submitted HEAD
+This project's plan is to stage candidate `2.0.0` assets in a GitHub Draft
+Release targeted at the submitted commit. JOSS asks for the reviewed revision
+to be tagged and archived after review; it does not prohibit draft or
+pre-release work before then. The current tag-triggered workflow publishes a
+GitHub Release, so pushing a tag would publish it. Keep the candidate draft
+unpublished and without a tag; after the editor requests final release details,
+update it to the exact reviewed revision, publish its matching version tag and
+GitHub Release, archive that revision with Zenodo (or another accepted
+archive), and report the version and archive DOI in the review issue.
 
-Do not embed a commit SHA in this file. Immediately before clicking submit:
+## Author declarations carried forward
 
-1. Public history still exceeds six months (created 25 February 2026).
-2. `paper/paper.md` date matches the calendar day of submission.
-3. The public GitHub description, homepage concept DOI, visible README, and
-   submitted branch identify the same candidate.
-4. The exact submitted HEAD has a green CI run (tests plus the paper job).
-5. Run, on a clean worktree with Pandoc available:
+The following author-controlled statements were supplied for the 13 September
+2026 candidate and are carried forward from the earlier submission record:
 
-```bash
-python scripts/check_submission_readiness.py \
-  --as-of 2026-09-13 \
-  --manual-confirmations path/to/submission-confirmations.json
-python scripts/check_public_candidate.py \
-  --confirmations path/to/submission-confirmations.json
+- Sole author and corresponding author: Delun Gong, `dlgong@imr.ac.cn`, ORCID
+  `0000-0001-7877-7707`; affiliation: Institute of Metal Research, Chinese
+  Academy of Sciences, Shenyang 110016, China.
+- Research use: the author uses `saxsabs` for absolute-intensity SAXS/USAXS at
+  SPring-8 BL19B2. Gong et al., *Acta Materialia* 316 (2026) 122455 is cited as
+  public research context; that article does not cite `saxsabs`. Raw beamline
+  frames remain private.
+- No external funding; no competing interests declared.
+- Earlier AI tools declared by the author: GitHub Copilot, Anthropic Claude,
+  OpenAI Codex, and xAI Grok. Exact earlier model versions were not retained.
+
+These dated declarations are not evidence that the author has reviewed new
+AI-assisted prose, code, or artwork produced during the 26 September
+preparation. The current paper disclosure must cover the tools used in this
+round and state the verification actually performed. Do not carry the earlier
+review statement forward to new output without evidence.
+
+## JOSS paper requirements
+
+The current JOSS format is Markdown with YAML metadata and a 750–1,750-word
+body. It requires the sections `Summary`, `Statement of need`, `State of the
+field`, `Software design`, `Research impact statement`, `AI usage disclosure`,
+`Acknowledgements`, and `References`. The paper must identify the software
+authors and affiliations, cite related software, describe applicable research
+use and financial support, and keep API documentation in the repository docs
+rather than the paper.
+
+The AI disclosure must cover AI use in software development, documentation,
+and paper authoring. When AI tools were used, JOSS asks authors to describe how
+they were used and how the generated material's quality and correctness were
+checked. Report only verification that was actually completed. The current
+JOSS policy also requires human authors to confirm that they reviewed, edited,
+and validated all AI-assisted outputs and made the core design decisions. The
+13 September confirmation covers that earlier candidate only; an author review
+statement for new outputs in this round remains to be made after inspecting
+the finished package.
+
+JOSS's current screening also asks for more than six months of public
+development for recently public projects, with activity over that period and
+evidence such as releases, tags, issues, or pull requests. Research impact must
+be specific and evidenced; the author-declared BL19B2 workflow is the current
+research-use statement. The paper must not turn a contextual paper into a
+software citation when it does not cite the package.
+
+## Exact-candidate checks before submission
+
+After the final paper and repository changes are merged to the submitted
+branch:
+
+1. Confirm that the paper date is the actual submission date and that the
+   paper contains no author-input placeholders.
+2. Confirm green test, package, and JOSS PDF jobs for the exact submitted
+   commit. Inspect the PDF generated by the JOSS Inara workflow; an older PDF
+   from a previous package is not evidence for the current paper.
+3. Confirm the submitted branch and 40-character SHA match the public README,
+   paper, and Actions run. Keep the confirmation JSON and command output in the
+   dated desktop submission package rather than committing them.
+4. Run both repository gates from a clean checkout with Pandoc available:
+
+```powershell
+$env:PANDOC = ".audit-work/tools/pandoc-3.11/pandoc-3.11/pandoc.exe"
+py -3.12 scripts/check_submission_readiness.py `
+  --as-of YYYY-MM-DD `
+  --manual-confirmations "D:\path\to\submission-confirmations.json"
+py -3.12 scripts/check_public_candidate.py `
+  --confirmations "D:\path\to\submission-confirmations.json"
 ```
 
-The confirmation JSON belongs in the dated external validation record (desktop
-submission pack), not in this tracked file.
+Replace `YYYY-MM-DD` with the real submission date and use the confirmation
+record for that same date and exact commit. The strict readiness command checks
+the paper, citation keys, repository metadata, README targets, versions, clean
+worktree, word count, and date. The public-candidate command checks the remote
+repository identity and CI evidence. The 13 September confirmation record must
+not be reused as though it verifies a new commit.
 
-## Project extra (not a JOSS desk-reject gate)
+## Project-level validation outside the JOSS screening gates
 
-Measured beamline/scientific acceptance with archived raw inputs, repeatability,
-and an independent comparison is still open. Synthetic `minimal_2d` and CI tests
-do not satisfy that extra gate.
-
-## After review
-
-JOSS asks authors to tag the reviewed revision and archive it. Do not create
-`v2.0.0` before that request.
+Measured beamline acceptance with archived raw frames, repeatability, and an
+independent scientific comparison remains a separate project validation item.
+Synthetic examples and CI establish software behavior only; they do not supply
+that measurement evidence. This item is not a prerequisite for the initial
+JOSS submission when the paper accurately describes the author's actual
+research use and the software's measured claims.

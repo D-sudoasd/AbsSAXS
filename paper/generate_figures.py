@@ -9,6 +9,8 @@ illustrate the robust estimator; it is not an experimental performance claim.
 from __future__ import annotations
 
 import argparse
+import shutil
+import sys
 from pathlib import Path
 
 import matplotlib as mpl
@@ -19,24 +21,27 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
+# Run directly from a source checkout without requiring an editable install.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from saxsabs import estimate_k_factor_robust
 from saxsabs.constants import NIST_SRM3600_DATA
 
 
 MM_PER_INCH = 25.4
-FULL_WIDTH_MM = 183.0
-FULL_WIDTH_IN = FULL_WIDTH_MM / MM_PER_INCH
+JOSS_TEXT_WIDTH_MM = 140.0
+JOSS_TEXT_WIDTH_IN = JOSS_TEXT_WIDTH_MM / MM_PER_INCH
 
 mpl.rcParams.update(
     {
         "font.family": "sans-serif",
         "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans", "sans-serif"],
-        "font.size": 7.5,
-        "axes.titlesize": 7,
-        "axes.labelsize": 7,
-        "legend.fontsize": 7,
-        "xtick.labelsize": 7,
-        "ytick.labelsize": 7,
+        "font.size": 8.0,
+        "axes.titlesize": 8.5,
+        "axes.labelsize": 8.5,
+        "legend.fontsize": 7.5,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
         "axes.spines.right": False,
         "axes.spines.top": False,
         "axes.linewidth": 0.7,
@@ -49,13 +54,17 @@ mpl.rcParams.update(
 COLORS = {
     "ink": "#23343D",
     "muted": "#60737D",
-    "input": "#E8F0FA",
-    "interface": "#FFF0D9",
-    "core": "#E7F3EA",
-    "output": "#F3E8F1",
+    "input": "#EAF2F8",
+    "interface": "#FFF1D6",
+    "core": "#E5F1EB",
+    "output": "#F0EAF4",
     "gate": "#EEF1F3",
-    "accent": "#2F6F8F",
-    "warning": "#C7772A",
+    "accent": "#0072B2",
+    "warning": "#D55E00",
+    "input_edge": "#24618A",
+    "interface_edge": "#9A541E",
+    "core_edge": "#247451",
+    "output_edge": "#725078",
 }
 
 
@@ -85,16 +94,17 @@ def _box(
     text: str,
     facecolor: str,
     *,
-    fontsize: float = 6.6,
+    edgecolor: str | None = None,
+    fontsize: float = 8.0,
     weight: str = "normal",
 ) -> None:
     patch = FancyBboxPatch(
         (x - width / 2, y - height / 2),
         width,
         height,
-        boxstyle="round,pad=0.08,rounding_size=0.12",
+        boxstyle="round,pad=0.035,rounding_size=0.10",
         facecolor=facecolor,
-        edgecolor=COLORS["ink"],
+        edgecolor=edgecolor or COLORS["ink"],
         linewidth=0.8,
     )
     ax.add_patch(patch)
@@ -133,106 +143,103 @@ def _arrow(
 
 
 def make_workflow_figure(output_dir: Path) -> None:
-    """Render the package architecture and the checks applied before export."""
+    """Render a compact architecture figure at the JOSS text-column width."""
 
-    fig, ax = plt.subplots(figsize=(FULL_WIDTH_IN, 3.65))
-    fig.subplots_adjust(left=0.012, right=0.988, bottom=0.025, top=0.985)
-    ax.set_xlim(0, 14)
-    ax.set_ylim(0, 8)
+    fig, ax = plt.subplots(figsize=(JOSS_TEXT_WIDTH_IN, 3.55))
+    fig.subplots_adjust(left=0.015, right=0.985, bottom=0.035, top=0.98)
+    ax.set_xlim(0, 14.6)
+    ax.set_ylim(1.25, 10)
     ax.axis("off")
 
+    _box(
+        ax,
+        7.3,
+        9.30,
+        13.8,
+        0.72,
+        "Entry points: Python API · CLI · Workbench · strict BL19B2 batch workflow",
+        COLORS["gate"],
+        edgecolor=COLORS["muted"],
+        fontsize=8.1,
+    )
+
     headings = [
-        (1.50, "Inputs", "input"),
-        (4.75, "Interfaces", "interface"),
-        (8.25, "Scientific core", "core"),
-        (12.30, "Outputs", "output"),
+        (1.95, "Inputs", "input", 1.75),
+        (7.30, "Shared processing", "core", 2.35),
+        (12.65, "Outputs", "output", 1.75),
     ]
-    for x, label, color_key in headings:
-        ax.text(x, 7.45, label, ha="center", va="center", fontsize=7, fontweight="bold")
-        ax.plot([x - 0.82, x + 0.82], [7.16, 7.16], color=COLORS[color_key], linewidth=4)
+    for x, label, color_key, half_width in headings:
+        ax.text(x, 8.45, label, ha="center", va="center", fontsize=9.2, fontweight="bold")
+        ax.plot(
+            [x - half_width, x + half_width],
+            [8.12, 8.12],
+            color=COLORS[color_key],
+            linewidth=3.2,
+            solid_capstyle="round",
+        )
 
     inputs = [
-        (6.05, "2D detector frames\nand instrument headers"),
-        (4.45, "External 1D profiles\nand correction metadata"),
-        (2.85, "SRM 3600, water, or\na user-supplied reference"),
+        (6.80, "2D detector frames\nand instrument headers"),
+        (4.80, "External 1D profiles\nand correction metadata"),
+        (2.80, "NIST SRM 3600,\nwater, or supplied\nreference curve"),
     ]
     for y, label in inputs:
-        _box(ax, 1.50, y, 2.45, 0.88, label, COLORS["input"], fontsize=6.2)
-
-    _box(
-        ax,
-        4.75,
-        5.55,
-        2.35,
-        1.22,
-        "CLI utilities and strict\nBL19B2 batch workflow",
-        COLORS["interface"],
-        fontsize=6.2,
-    )
-    _box(
-        ax,
-        4.75,
-        3.45,
-        2.35,
-        1.22,
-        "SAXSAbs Workbench\ncalibration and export",
-        COLORS["interface"],
-        fontsize=6.2,
-    )
-    _box(
-        ax,
-        4.75,
-        1.55,
-        2.35,
-        1.0,
-        "Python API\npublic package functions",
-        COLORS["interface"],
-        fontsize=6.2,
-    )
+        _box(
+            ax,
+            1.95,
+            y,
+            3.55,
+            1.05,
+            label,
+            COLORS["input"],
+            edgecolor=COLORS["input_edge"],
+            fontsize=8.0,
+        )
 
     core = [
-        (6.35, "Parse, normalize, and\nvalidate inputs"),
-        (5.15, "Reduce detector data and\nintegrate with pyFAI"),
-        (3.95, "Estimate robust K and\npropagate uncertainty"),
-        (2.75, "Check intensity state and\ncorrection history"),
-        (1.55, "Write canSAS, NXcanSAS,\nand calibrated 2D outputs"),
+        (6.90, "Parse, normalize, and\nvalidate inputs", 0.92),
+        (5.50, "Reduce detector data and\nintegrate with pyFAI", 0.92),
+        (4.10, "Estimate K and propagate\nsupported uncertainty", 0.92),
+        (
+            2.50,
+            "Check intensity state\nand correction history\nbefore calibrated output",
+            1.25,
+        ),
     ]
-    for y, label in core:
-        _box(ax, 8.25, y, 3.05, 0.76, label, COLORS["core"], fontsize=6.0)
+    for y, label, height in core:
+        _box(
+            ax,
+            7.30,
+            y,
+            5.25,
+            height,
+            label,
+            COLORS["core"],
+            edgecolor=COLORS["core_edge"],
+            fontsize=8.0,
+        )
 
     outputs = [
-        (5.85, "Absolute-scale 1D profiles\nand calibrated 2D packages"),
-        (4.05, "canSAS XML and\nNXcanSAS HDF5"),
-        (2.25, "Calibration records, source\nhashes, QC, and run reports"),
+        (6.70, "Absolute 1D profiles\nand calibrated 2D data"),
+        (4.80, "canSAS XML and\nNXcanSAS HDF5"),
+        (2.90, "Calibration records,\nsource hashes, QC,\nand run reports"),
     ]
     for y, label in outputs:
-        _box(ax, 12.30, y, 2.65, 1.0, label, COLORS["output"], fontsize=6.1)
+        _box(
+            ax,
+            12.65,
+            y,
+            3.55,
+            1.28,
+            label,
+            COLORS["output"],
+            edgecolor=COLORS["output_edge"],
+            fontsize=8.0,
+        )
 
-    _arrow(ax, (2.78, 4.45), (3.52, 4.45), color=COLORS["accent"])
-    _arrow(ax, (5.97, 4.45), (6.67, 4.45), color=COLORS["accent"])
-    _arrow(ax, (9.80, 4.45), (10.85, 4.45), color=COLORS["accent"])
-
-    gate = FancyBboxPatch(
-        (0.18, 0.12),
-        13.64,
-        0.62,
-        boxstyle="round,pad=0.04,rounding_size=0.12",
-        facecolor=COLORS["gate"],
-        edgecolor=COLORS["warning"],
-        linewidth=0.9,
-    )
-    ax.add_patch(gate)
-    ax.text(
-        7,
-        0.43,
-        "Required checks before calibrated output: units · transmission · thickness · "
-        "correction state · calibration provenance",
-        ha="center",
-        va="center",
-        fontsize=6.2,
-        color=COLORS["ink"],
-        fontweight="bold",
-    )
+    # These arrows connect the three stages without crossing any labels.
+    _arrow(ax, (3.79, 4.80), (4.66, 4.80), color=COLORS["accent"])
+    _arrow(ax, (9.94, 4.80), (10.86, 4.80), color=COLORS["accent"])
     save_figure(fig, output_dir, "fig_workflow")
     plt.close(fig)
 
@@ -272,39 +279,39 @@ def make_kfactor_figure(output_dir: Path) -> None:
         ]
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.75))
-    fig.subplots_adjust(left=0.08, right=0.99, bottom=0.20, top=0.87, wspace=0.30)
+    fig, axes = plt.subplots(1, 2, figsize=(JOSS_TEXT_WIDTH_IN, 2.82))
+    fig.subplots_adjust(left=0.12, right=0.99, bottom=0.24, top=0.85, wspace=0.34)
 
     left, right = axes
-    left.semilogy(
-        q_ref,
-        i_ref,
-        "s-",
-        color=COLORS["warning"],
-        markersize=3.2,
-        linewidth=1.0,
-    )
     left.semilogy(
         q_dense,
         i_meas_dense * k_true,
         linestyle="none",
         marker=".",
-        markersize=2.0,
+        markersize=1.5,
         color=COLORS["accent"],
         alpha=0.85,
+        zorder=2,
+        label="Rescaled synthetic profile",
+    )
+    left.semilogy(
+        q_ref,
+        i_ref,
+        linestyle="--",
+        dashes=(4, 2),
+        color=COLORS["warning"],
+        linewidth=1.15,
+        zorder=1,
+        label="NIST SRM 3600 curve (supplied)",
     )
     left.set(xlabel=r"$q$ ($\mathrm{\AA}^{-1}$)", ylabel=r"$I(q)$ ($\mathrm{cm}^{-1}$)")
-    left.set_title("Reference and rescaled synthetic profile", loc="left", fontweight="bold")
-    left.text(-0.12, 1.04, "a", transform=left.transAxes, fontsize=8, fontweight="bold")
-    left.legend(["NIST SRM 3600", "Synthetic measured profile"], frameon=False, loc="upper right")
-    left.text(
-        0.03,
-        0.04,
-        "SYNTHETIC DEMO",
-        transform=left.transAxes,
-        fontsize=7,
-        color=COLORS["muted"],
-        bbox={"facecolor": "white", "edgecolor": COLORS["muted"], "pad": 2},
+    left.set_title("Reference and scaled profile", loc="left", fontweight="bold")
+    left.text(-0.13, 1.04, "a", transform=left.transAxes, fontsize=9.5, fontweight="bold")
+    left.legend(
+        frameon=False,
+        loc="upper right",
+        handlelength=1.7,
+        borderaxespad=0.5,
     )
 
     right.scatter(q_ref[inliers], ratios[inliers], s=16, color=COLORS["accent"], label="Inlier")
@@ -325,11 +332,27 @@ def make_kfactor_figure(output_dir: Path) -> None:
     )
     right.set(xlabel=r"$q$ ($\mathrm{\AA}^{-1}$)", ylabel=r"$I_{ref}/I_{meas}$")
     right.set_title("Robust K estimate", loc="left", fontweight="bold")
-    right.text(-0.12, 1.04, "b", transform=right.transAxes, fontsize=8, fontweight="bold")
-    right.legend(frameon=False, ncol=2, loc="upper right")
+    right.text(-0.13, 1.04, "b", transform=right.transAxes, fontsize=9.5, fontweight="bold")
+    right.legend(
+        frameon=False,
+        ncol=2,
+        loc="upper right",
+        handlelength=1.8,
+        columnspacing=1.0,
+        borderaxespad=0.5,
+    )
 
     save_figure(fig, output_dir, "fig_kfactor_demo")
     plt.close(fig)
+
+
+def sync_readme_assets(output_dir: Path, readme_assets_dir: Path, *, include_demo: bool) -> None:
+    """Keep the README workflow and demo images aligned with their source figures."""
+
+    readme_assets_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(output_dir / "fig_workflow.svg", readme_assets_dir / "workflow.svg")
+    if include_demo:
+        shutil.copyfile(output_dir / "fig_kfactor_demo.png", readme_assets_dir / "kfactor-demo.png")
 
 
 def main() -> None:
@@ -344,11 +367,19 @@ def main() -> None:
         action="store_true",
         help="also render the explicitly synthetic K-factor demonstration",
     )
+    parser.add_argument(
+        "--readme-assets-dir",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "assets" / "readme",
+        help="directory for the matching README SVG and optional demo PNG",
+    )
     args = parser.parse_args()
     output_dir = args.output_dir.resolve()
+    readme_assets_dir = args.readme_assets_dir.resolve()
     make_workflow_figure(output_dir)
     if args.demo:
         make_kfactor_figure(output_dir)
+    sync_readme_assets(output_dir, readme_assets_dir, include_demo=args.demo)
     print(f"Wrote JOSS figures to {output_dir}")
 
 

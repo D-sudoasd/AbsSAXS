@@ -50,3 +50,47 @@ jobs:
           name: paper-pdf
           path: paper/paper.pdf
           if-no-files-found: error
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build and check distributions
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          python -m build --sdist --wheel --outdir dist
+          python -m twine check dist/*
+      - name: Clean-install wheel and check the installed CLI
+        run: |
+          python -m venv "$RUNNER_TEMP/saxsabs-wheel-smoke"
+          smoke_python="$RUNNER_TEMP/saxsabs-wheel-smoke/bin/python"
+          smoke_cli="$RUNNER_TEMP/saxsabs-wheel-smoke/bin/saxsabs"
+          wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          "$smoke_python" -m pip install "${wheel}[gui,bl19b2,hdf5]"
+          smoke_dir="$(mktemp -d)"
+          (
+            cd "$smoke_dir"
+            "$smoke_cli" --version
+            "$smoke_python" - <<'PY'
+          from pathlib import Path
+
+          import saxsabs
+
+          module_path = Path(saxsabs.__file__).resolve()
+          if "site-packages" not in module_path.parts:
+              raise SystemExit(f"expected installed wheel, got {module_path}")
+          print(f"installed_version={saxsabs.__version__}")
+          print(f"installed_module={module_path}")
+          PY
+          )
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

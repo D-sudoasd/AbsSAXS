@@ -1,11 +1,14 @@
 import json
 import sys
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
 
+from saxsabs.constants import NIST_SRM3600_DATA
 from saxsabs.cli import _normalize_q_profile, _read_profile_for_estimate, main
+from saxsabs.io.parsers import read_external_1d_profile
 from saxsabs.workflows import bl19b2_abs2d
 
 
@@ -134,10 +137,16 @@ def test_cli_parse_header(tmp_path: Path, capsys: pytest.CaptureFixture[str], mo
     assert out["trans"] == 0.8
 
 
-def test_cli_estimate_k(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch):
+def test_cli_estimate_k_accepts_unlabeled_custom_reference_as_absolute_assertion(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
     meas = tmp_path / "meas.csv"
     ref = tmp_path / "ref.csv"
     meas.write_text("q,i\n0.01,17.1\n0.02,15.4\n0.05,13.4\n0.10,11.8\n", encoding="utf-8")
+    # These generic q/i headers carry no unit metadata; --ref supplies the
+    # absolute q and intensity unit assertion for this user-provided curve.
     ref.write_text("q,i\n0.01,34.2\n0.02,30.8\n0.05,26.8\n0.10,23.6\n", encoding="utf-8")
 
     monkeypatch.setattr(
@@ -166,6 +175,60 @@ def test_cli_estimate_k(tmp_path: Path, capsys: pytest.CaptureFixture[str], monk
     assert out["k_standard_uncertainty"] is None
     assert out["k_expanded_uncertainty"] is None
     assert out["coverage_factor"] is None
+    assert out["parallelism_qc_method"] is None
+    assert out["parallelism_tolerance_source"] is None
+    assert out["k_statistical_standard_uncertainty_method"] == "asymptotic_normal_approximation_iid_ratio_points"
+    assert out["k_statistical_standard_uncertainty_assumptions"] == [
+        "inlier ratio points are treated as independent",
+        "inlier ratio scatter is approximated as normal",
+        "measurement noise and cross-Q covariance are not modeled",
+    ]
+    assert out["k_standard_uncertainty_scope"] == "ratio_scatter_only"
+    assert out["k_standard_uncertainty_assumes_independent_components"] is None
+
+
+def test_cli_estimate_k_reports_builtin_reference_qc_and_uncertainty_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    measured = tmp_path / "measured.csv"
+    reference_rows = NIST_SRM3600_DATA[
+        (NIST_SRM3600_DATA[:, 0] >= 0.01) & (NIST_SRM3600_DATA[:, 0] <= 0.2)
+    ]
+    np.savetxt(
+        measured,
+        np.column_stack((reference_rows[:, 0], reference_rows[:, 1] / 2.0)),
+        delimiter=",",
+        header="q,i_rel",
+        comments="",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["saxsabs", "estimate-k", "--meas", str(measured)],
+    )
+
+    main()
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["k_factor"] == pytest.approx(2.0, rel=1e-12)
+    assert out["parallelism_qc_method"] == (
+        "maximum_absolute_pointwise_ratio_deviation_from_median"
+    )
+    assert out["parallelism_tolerance_source"] == (
+        "project_heuristic_from_max_srm3600_expanded_relative_uncertainty"
+    )
+    assert out["k_statistical_standard_uncertainty_method"] == (
+        "asymptotic_normal_approximation_iid_ratio_points"
+    )
+    assert out["k_statistical_standard_uncertainty_assumptions"] == [
+        "inlier ratio points are treated as independent",
+        "inlier ratio scatter is approximated as normal",
+        "measurement noise and cross-Q covariance are not modeled",
+    ]
+    assert out["k_standard_uncertainty_scope"] == "partial"
+    assert out["k_standard_uncertainty_assumes_independent_components"] is True
 
 
 def test_cli_estimate_k_accepts_common_intensity_column_names(
@@ -215,7 +278,7 @@ def test_cli_estimate_k_accepts_scattering_column_names_with_units(
         encoding="utf-8",
     )
     ref.write_text(
-        "Q_A^-1,I_rel\n0.01,34.2\n0.02,30.8\n0.05,26.8\n0.10,23.6\n",
+        "Q_A^-1,I_abs_cm^-1\n0.01,34.2\n0.02,30.8\n0.05,26.8\n0.10,23.6\n",
         encoding="utf-8",
     )
 
@@ -250,7 +313,7 @@ def test_cli_estimate_k_converts_nm_inverse_q_to_angstrom_inverse(
         encoding="utf-8",
     )
     ref.write_text(
-        "Q (nm⁻¹),I_rel\n0.10,34.2\n0.20,30.8\n0.50,26.8\n1.00,23.6\n",
+        "Q (nm⁻¹),I_abs_cm^-1\n0.10,34.2\n0.20,30.8\n0.50,26.8\n1.00,23.6\n",
         encoding="utf-8",
     )
 
@@ -976,6 +1039,132 @@ def test_cli_estimate_k_refuses_unlabeled_intensity(
 
     assert exc_info.value.code == 1
     assert "ambiguous" in capsys.readouterr().err.lower()
+
+
+@pytest.mark.parametrize(
+    ("reference_metadata", "message"),
+    [
+        ("# intensity_state: relative\n", "relative"),
+        ("# intensity_state: raw_counts\n", "raw detector counts"),
+        (
+            "# intensity_state: relative\n# intensity_unit: 1/cm\n",
+            "conflicting or invalid",
+        ),
+        ("# intensity_unit: a.u.\n", None),
+        ("# intensity_state: absolute_cm^-1\n# intensity_unit: a.u.\n", None),
+        ("# intensity_state: absolute_cm^-1\n# intensity_unit: mm^-1\n", None),
+    ],
+)
+def test_cli_estimate_k_rejects_non_absolute_or_conflicting_custom_reference(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    reference_metadata: str,
+    message: str | None,
+):
+    meas = tmp_path / "meas.csv"
+    ref = tmp_path / "ref.csv"
+    meas.write_text(
+        "# intensity_state: relative\nq,i\n"
+        "0.01,17.1\n0.02,15.4\n0.05,13.4\n0.10,11.8\n",
+        encoding="utf-8",
+    )
+    ref.write_text(
+        reference_metadata
+        + "q,i\n0.01,34.2\n0.02,30.8\n0.05,26.8\n0.10,23.6\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "saxsabs",
+            "estimate-k",
+            "--meas",
+            str(meas),
+            "--ref",
+            str(ref),
+            "--intensity-state",
+            "relative",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err.lower()
+    assert "custom reference profile" in error
+    if message is not None:
+        assert message in error
+
+
+def test_cli_estimate_k_rejects_conflicting_canSAS_intensity_units(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    measured = tmp_path / "measured.csv"
+    reference = tmp_path / "reference.xml"
+    measured.write_text(
+        "# intensity_state: relative\nq,i\n"
+        "0.01,17.1\n0.02,15.4\n0.05,13.4\n0.10,11.8\n",
+        encoding="utf-8",
+    )
+    namespace = "urn:cansas1d:1.1"
+    root = ET.Element(f"{{{namespace}}}SASroot", {"version": "1.1"})
+    entry = ET.SubElement(root, f"{{{namespace}}}SASentry", {"name": "entry01"})
+    data = ET.SubElement(entry, f"{{{namespace}}}SASdata")
+    for q_value, intensity in (
+        (0.01, 34.2),
+        (0.02, 30.8),
+        (0.05, 26.8),
+        (0.10, 23.6),
+    ):
+        point = ET.SubElement(data, f"{{{namespace}}}Idata")
+        ET.SubElement(point, f"{{{namespace}}}Q", {"unit": "1/A"}).text = str(q_value)
+        ET.SubElement(point, f"{{{namespace}}}I", {"unit": "1/cm"}).text = str(intensity)
+    process = ET.SubElement(entry, f"{{{namespace}}}SASprocess")
+    ET.SubElement(
+        process, f"{{{namespace}}}term", {"name": "intensity_state"}
+    ).text = "absolute_cm^-1"
+    ET.SubElement(
+        process, f"{{{namespace}}}term", {"name": "intensity_unit"}
+    ).text = "mm^-1"
+    ET.ElementTree(root).write(reference, encoding="utf-8", xml_declaration=True)
+
+    parsed_reference = read_external_1d_profile(reference)
+    assert parsed_reference["intensity_unit"] == "1/cm"
+    assert parsed_reference["operator_provenance"]["intensity_unit"] == "mm^-1"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["saxsabs", "estimate-k", "--meas", str(measured), "--ref", str(reference)],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 1
+    error = capsys.readouterr().err.lower()
+    assert "custom reference profile" in error
+
+
+def test_cli_estimate_k_help_documents_measured_and_reference_units(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(sys, "argv", ["saxsabs", "estimate-k", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "Reduced relative measured profile" in help_text
+    assert "Standard-specimen thickness in cm" in help_text
+    normalized_help = " ".join(help_text.split())
+    assert "asserts absolute reference intensity in cm^-1" in normalized_help
+    assert "Unlabeled intensity columns are accepted" in normalized_help
 
 
 def test_cli_estimate_k_thickness_cm_converts_to_per_cm(

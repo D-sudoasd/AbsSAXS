@@ -190,6 +190,12 @@ class StandardCalibration:
     parallelism_max_relative_deviation: float | None = None
     parallelism_relative_tolerance: float | None = None
     parallelism_check_passed: bool | None = None
+    parallelism_qc_method: str | None = None
+    parallelism_tolerance_source: str | None = None
+    k_statistical_standard_uncertainty_method: str | None = None
+    k_statistical_standard_uncertainty_assumptions: tuple[str, ...] | None = None
+    k_standard_uncertainty_scope: str | None = None
+    k_standard_uncertainty_assumes_independent_components: bool | None = None
 
 
 K_STD_SEMANTICS = "inlier ratio scatter; not combined K uncertainty"
@@ -1225,6 +1231,18 @@ def validate_config(config: BL19B2Abs2DConfig) -> None:
         raise ValueError("sample_thickness_cm must be finite and > 0")
     if str(config.monitor_mode).strip().lower() not in {"rate", "integrated"}:
         raise ValueError("monitor_mode must be 'rate' or 'integrated'")
+    polarization_factor = config.polarization_factor
+    if polarization_factor is not None:
+        if isinstance(polarization_factor, bool) or not isinstance(
+            polarization_factor, (int, float, np.integer, np.floating)
+        ):
+            raise ValueError("polarization_factor must be finite and in [-1, 1]")
+        polarization_factor = float(polarization_factor)
+        if (
+            not math.isfinite(polarization_factor)
+            or not -1.0 <= polarization_factor <= 1.0
+        ):
+            raise ValueError("polarization_factor must be finite and in [-1, 1]")
     uncertainty_fields = (
         "transmission_abs_uncertainty",
         "monitor_relative_standard_uncertainty",
@@ -2424,6 +2442,31 @@ def _control_inputs_provenance_payload(inputs: RunControlInputs) -> dict[str, An
     return payload
 
 
+_K_ESTIMATION_DIAGNOSTIC_KEYS = (
+    "parallelism_qc_method",
+    "parallelism_tolerance_source",
+    "k_statistical_standard_uncertainty_method",
+    "k_statistical_standard_uncertainty_assumptions",
+    "k_standard_uncertainty_scope",
+    "k_standard_uncertainty_assumes_independent_components",
+)
+
+
+def _k_estimation_diagnostics(
+    calibration: StandardCalibration | dict[str, Any],
+) -> dict[str, Any]:
+    """Return optional K-estimation interpretation metadata outside schema v4."""
+    if isinstance(calibration, StandardCalibration):
+        return {
+            key: getattr(calibration, key)
+            for key in _K_ESTIMATION_DIAGNOSTIC_KEYS
+        }
+    diagnostics = calibration.get("k_estimation_diagnostics")
+    if not isinstance(diagnostics, dict):
+        return {key: None for key in _K_ESTIMATION_DIAGNOSTIC_KEYS}
+    return {key: diagnostics.get(key) for key in _K_ESTIMATION_DIAGNOSTIC_KEYS}
+
+
 def _header_identity(header: BL19B2Header) -> dict[str, Any]:
     return {
         "exposure_s": header.exposure_s,
@@ -3044,6 +3087,9 @@ def write_provenance_package(
         "processing_signature": processing_signature,
         "processing_signature_payload": signature_payload,
         "uncertainty_inputs": _uncertainty_input_payload(config),
+        "k_estimation_diagnostics": _json_safe(
+            _k_estimation_diagnostics(calibration)
+        ),
         "standard_calibration": {
             **_k_calibration_contract(calibration, require_complete=True),
             "q_min_overlap": calibration.q_min_overlap,
@@ -3578,6 +3624,22 @@ def calibrate_standard(
         ),
         parallelism_relative_tolerance=k_result.parallelism_relative_tolerance,
         parallelism_check_passed=k_result.parallelism_check_passed,
+        parallelism_qc_method=getattr(k_result, "parallelism_qc_method", None),
+        parallelism_tolerance_source=getattr(
+            k_result, "parallelism_tolerance_source", None
+        ),
+        k_statistical_standard_uncertainty_method=getattr(
+            k_result, "k_statistical_standard_uncertainty_method", None
+        ),
+        k_statistical_standard_uncertainty_assumptions=getattr(
+            k_result, "k_statistical_standard_uncertainty_assumptions", None
+        ),
+        k_standard_uncertainty_scope=getattr(
+            k_result, "k_standard_uncertainty_scope", None
+        ),
+        k_standard_uncertainty_assumes_independent_components=getattr(
+            k_result, "k_standard_uncertainty_assumes_independent_components", None
+        ),
     )
     return calibration, bg_net
 
@@ -3657,6 +3719,14 @@ def write_hdf5_image(
         entry.attrs["processing_signature"] = str(metadata.get("processing_signature", ""))
         entry.attrs["frame_signature"] = str(metadata.get("frame_signature", ""))
         entry.attrs["k_calibration_json"] = json.dumps(k_contract, sort_keys=True)
+        entry.attrs["k_estimation_diagnostics_json"] = json.dumps(
+            _json_safe(
+                _k_estimation_diagnostics(
+                    metadata.get("absolute_calibration", {})
+                )
+            ),
+            sort_keys=True,
+        )
         data = entry.create_group("data")
         data.attrs["NX_class"] = "NXdata"
         data.attrs["signal"] = "I_abs_2d"
@@ -4354,6 +4424,9 @@ def _frame_metadata(
             "standard_file": str(reference_paths.standard),
             "standard_key": config.standard_key,
             **_k_calibration_contract(calibration, require_complete=True),
+            "k_estimation_diagnostics": _json_safe(
+                _k_estimation_diagnostics(calibration)
+            ),
             "q_min_overlap": calibration.q_min_overlap,
             "q_max_overlap": calibration.q_max_overlap,
             "points_used": calibration.points_used,
@@ -4649,6 +4722,10 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
             ),
             "parallelism_relative_tolerance": calibration.parallelism_relative_tolerance,
             "parallelism_check_passed": calibration.parallelism_check_passed,
+            "k_estimation_diagnostics_json": json.dumps(
+                _json_safe(_k_estimation_diagnostics(calibration)),
+                sort_keys=True,
+            ),
             "q_min_overlap": calibration.q_min_overlap,
             "q_max_overlap": calibration.q_max_overlap,
             "points_used": calibration.points_used,
@@ -5011,6 +5088,9 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
         "parallelism_max_relative_deviation": calibration.parallelism_max_relative_deviation,
         "parallelism_relative_tolerance": calibration.parallelism_relative_tolerance,
         "parallelism_check_passed": calibration.parallelism_check_passed,
+        "k_estimation_diagnostics": _json_safe(
+            _k_estimation_diagnostics(calibration)
+        ),
         "standard_k_report": str(out_root / "qc" / "standard_k_report.csv"),
         "processing_manifest": str(out_root / "manifests" / "processing_manifest.csv"),
         "provenance_summary": str(provenance_paths.provenance_summary),

@@ -26,10 +26,15 @@ cannot be fully public.
 3. Verify normalization:
 
    ```bash
+   # Rate mode: MON=100,000 counts/s; exposure=1 s; transmission=0.8
    saxsabs norm-factor --mode rate --exp 1.0 --mon 100000 --trans 0.8
+   # Integrated mode: MON=100,000 monitor counts for the exposure
+   saxsabs norm-factor --mode integrated --mon 100000 --trans 0.8
    ```
 
-   Expected result: `80000.0`
+   Both commands return `80000.0`. Detector counts are accumulated in both
+   modes; the mode identifies whether the monitor input is a rate or an
+   integrated count.
 
 4. Verify header parsing:
 
@@ -53,9 +58,14 @@ cannot be fully public.
    saxsabs estimate-k --meas examples/k_measured.csv --ref examples/k_reference.csv --qmin 0.01 --qmax 0.2
    ```
 
-   The measured file already declares `# intensity_state: relative`. Unlabeled
-   intensity is refused. Thickness, when needed, is `--thickness-cm` (Workbench
-   Tab 1 enters millimetres: `1.055 mm = 0.1055 cm`).
+   The measured profile must already be reduced to relative intensity. Apply the
+   appropriate dark/background subtraction and monitor/transmission
+   normalization before K estimation, and record the correction history. The
+   paired reference curve is absolute (`cm^-1`). The example file declares
+   `# intensity_state: relative`; input without this metadata or an explicit
+   `--intensity-state relative` declaration is refused. Raw-count, ambiguous,
+   and already absolute input is refused. Thickness, when needed, is `--thickness-cm`
+   (Workbench Tab 1 enters millimetres: `1.055 mm = 0.1055 cm`).
 
    Expected: `k_factor` close to `2.0`, with non-zero `points_used`.
 

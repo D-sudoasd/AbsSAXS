@@ -1,12 +1,14 @@
 """Monitor-mode-aware normalization logic for SAXS absolute intensity.
 
-Two normalization modes are supported:
+Two monitor modes are supported:
 
-* **rate** – the detector signal is a *rate* (counts per second), so the
-  normalization factor is ``exposure_time * monitor_counts * transmission``.
-* **integrated** – the detector signal is already integrated over the
-  acquisition window, so the factor simplifies to
-  ``monitor_counts * transmission``.
+* **rate** – the beam monitor reports a count rate (counts per second), so the
+  normalization factor is ``exposure_time * I0 * transmission``.
+* **integrated** – the beam monitor reports counts integrated over the
+  acquisition window, so the normalization factor is ``I0 * transmission``.
+
+The detector profile contains accumulated counts in both modes. The mode
+describes how the beam-monitor value is recorded.
 """
 
 from __future__ import annotations
@@ -21,7 +23,8 @@ def monitor_norm_formula(mode: str) -> str:
     """Return a human-readable formula string for the given normalization mode.
 
     Args:
-        mode: One of ``'rate'`` or ``'integrated'`` (case-insensitive).
+        mode: Beam-monitor recording mode: ``'rate'`` or ``'integrated'``
+            (case-insensitive).
 
     Returns:
         A formula string such as ``'exp * I0 * T'``.
@@ -41,11 +44,12 @@ def compute_norm_factor(exp: float | None, mon: float | None, trans: float | Non
     """Compute the normalization factor for absolute intensity conversion.
 
     Args:
-        exp: Exposure time in seconds.  Required when *mode* is ``'rate'``;
-            ignored for ``'integrated'``.
-        mon: Beam-monitor counts (I₀).
+        exp: Detector exposure time in seconds. Required when *mode* is ``'rate'``;
+            ignored when the beam monitor reports integrated counts.
+        mon: Beam-monitor value used as I₀: a count rate for ``'rate'`` mode or
+            integrated counts for ``'integrated'`` mode.
         trans: Sample transmission factor (0 < T ≤ 1).
-        mode: ``'rate'`` or ``'integrated'``.
+        mode: Beam-monitor recording mode: ``'rate'`` or ``'integrated'``.
 
     Returns:
         The normalization product.  Returns ``math.nan`` when any required

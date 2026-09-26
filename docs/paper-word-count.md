@@ -1,16 +1,18 @@
 # JOSS paper word-count method
 
-The paper body is counted with Pandoc rather than by counting Markdown tokens:
+The JOSS submission-length gate counts the manuscript body as rendered by
+Pandoc, excluding the References section and any `[Author input required ...]`
+markers. It tokenizes that plain text with
+`[A-Za-z0-9][A-Za-z0-9'./+^-]*`; the permitted range is 750–1,750 words.
+
+Regenerate the count from the project root after any manuscript edit:
 
 ```powershell
-pandoc paper/paper.md --from=markdown --to=plain --resource-path=paper \
-  --output=paper-body.txt
+$env:PANDOC = "C:\path\to\pandoc.exe"
+py -3.13 -c "from scripts.check_submission_readiness import paper_word_count; print(paper_word_count())"
 ```
 
-For the submission-length check, remove the `References` section and the
-bracketed author-input markers from `paper-body.txt`, then count tokens matching
-`[A-Za-z0-9][A-Za-z0-9'./+^-]*`.
-
-The count must be regenerated after author-controlled content is added. The
-current count is recorded by `scripts/check_submission_readiness.py` rather
-than hard-coded here.
+Pandoc must be available on `PATH` or its executable set in the `PANDOC`
+environment variable. This uses the same conversion and token rule as the
+submission-readiness check. The generated value is authoritative for the
+current revision; update the dated count above if it changes.

@@ -14,16 +14,23 @@ compute_norm_factor(exp: float | None, mon: float | None,
                     trans: float | None, mode: str) -> float
 ```
 
-Returns the normalization product for `mode="rate"` (`exp * mon * trans`) or
-`mode="integrated"` (`mon * trans`). Transmission must be in `(0, 1]`; missing,
-non-positive, or non-finite required values return `math.nan`. An unknown mode
-raises `ValueError`.
+The `mode` describes how the beam monitor value was recorded. For `mode="rate"`,
+`mon` is a monitor count rate in counts/s and `exp` is exposure time in seconds;
+the normalization product is `exp * mon * trans`. For `mode="integrated"`,
+`mon` is the integrated monitor count for the exposure and the product is
+`mon * trans`; `exp` is ignored. Detector images are accumulated counts in both
+modes. Transmission must be in `(0, 1]`; missing, non-positive, or non-finite
+required values return `math.nan`. An unknown mode raises `ValueError`.
 
 ```python
 from saxsabs import compute_norm_factor
 
+# MON = 100,000 counts/s; exposure = 1 s; transmission = 0.8
 factor = compute_norm_factor(1.0, 100000.0, 0.8, "rate")
 assert factor == 80000.0
+
+# Or supply 100,000 monitor counts integrated over the exposure.
+assert compute_norm_factor(None, 100000.0, 0.8, "integrated") == 80000.0
 ```
 
 ### Robust K-factor estimation
@@ -45,9 +52,29 @@ Interpolates the measured profile on the reference q grid in `q_window`, forms
 `I_ref / I_meas`, and applies median/MAD outlier rejection. If both reference
 arrays are omitted, it uses the built-in NIST SRM 3600 reference and fails
 closed if any ratio exceeds the certificate-derived relative-intensity limit
-before that filter. Measured intensities must already be on the same scale as
-the reference (cm$^{-1}$ for SRM 3600). The result contains the estimate and
-diagnostics; inspect it before applying a scale.
+before that filter. K estimation needs a measured profile that has already been
+reduced to `relative` intensity, with appropriate background/dark subtraction
+and monitor/transmission normalization applied. Record the corrections in the
+profile metadata and handle thickness with `--thickness-cm` when it has not
+already been applied. The CLI state gate requires an explicit relative state and
+refuses raw-count, ambiguous, and already absolute measured profiles. The
+reference curve is absolute intensity in cm$^{-1}$. This array-based function
+cannot inspect intensity-state metadata or correction history, so direct callers
+must provide physically compatible arrays. The result contains the estimate
+and diagnostics; inspect it before applying a scale.
+
+For the built-in NIST SRM 3600 reference, use the certified mean coupon
+thickness of 1.055 mm (0.1055 cm), rather than measuring each coupon separately.
+The [NIST certificate](https://tsapps.nist.gov/srmext/certificates/3600.pdf)
+includes coupon-to-coupon thickness variability in its reference uncertainty
+(Table 1). In BL19B2 uncertainty accounting, set
+`--standard-thickness-relative-standard-uncertainty 0.0` when there is no
+additional independent thickness uncertainty; this avoids counting the same
+coupon variability twice. Enter a nonzero value only for an additional
+independently characterized thickness source that is absent from the reference
+uncertainty and has negligible covariance with it. For a custom standard, supply
+a separate relative thickness uncertainty only when its reference-curve
+uncertainty excludes specimen thickness and their covariance is negligible.
 
 ```python
 from saxsabs import estimate_k_factor_robust
@@ -165,7 +192,7 @@ Run `saxsabs --help` for the installed command and `saxsabs <command> --help`
 for parameters. Required inputs are shown in angle brackets:
 
 ```text
-saxsabs norm-factor --mon <counts> --trans <0<T<=1> --mode <rate|integrated> [--exp <seconds>]
+saxsabs norm-factor --mon <monitor-rate-or-integrated-counts> --trans <0<T<=1> --mode <rate|integrated> [--exp <seconds>]
 saxsabs parse-header --header-json <path>
 saxsabs parse-external1d --input <path>
 saxsabs estimate-k --meas <path> [--ref <path>] [--q-col <name>] [--i-col <name>]
@@ -183,6 +210,11 @@ saxsabs bl19b2-abs2d --input-root <path> (--poni <path>|--pydidas-cali-yaml <pat
 saxsabs bl19b2-abs2d-v1-legacy --input-root <path>
                                    (--poni <path>|--pydidas-cali-yaml <path>) [migration options]
 ```
+
+For `norm-factor`, `rate` means `--mon` is a monitor rate in counts/s and requires
+`--exp` in seconds. `integrated` means `--mon` is the monitor count integrated
+over the acquisition interval; `--exp` is not used. Both modes normalize
+accumulated detector counts and include sample transmission.
 
 The main commands are:
 

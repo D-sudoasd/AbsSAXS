@@ -1,16 +1,14 @@
 # README asset provenance
 
-These files support the GitHub repository homepage and are not experimental
-evidence.
+These assets support the GitHub repository homepage. Artwork and synthetic
+figures are not experimental evidence.
 
 | Asset | Source and regeneration |
 | --- | --- |
-| `hero.svg` | Hand-authored SAXS calibration-path diagram (measured I(q), reference I(q), K, absolute export); it contains no measured data. |
-| `workflow.svg` | Hand-authored entry-point map for CLI utilities, Workbench, strict BL19B2, and Python API, with shared-core and output labels; the adjacent README table is authoritative. |
-| `workbench.png` | Curated copy of `paper/fig_gui.png`, captured from the current source tree with `python paper/capture_gui_screenshot.py`. |
-| `kfactor-demo.png` | Curated copy of `paper/fig_kfactor_demo.png`, generated deterministically with `python paper/generate_figures.py --demo`; it is synthetic and not beamline validation. |
+| `saxsabs-overview.png` | Conceptual cover illustration generated with the built-in OpenAI image-generation tool on 2026-09-26. The prompt is preserved in `overview-prompt.txt`. It contains no experimental data, measured values, or software screenshot. |
+| `workflow.svg` | Generated from `paper/generate_figures.py` with `python paper/generate_figures.py --demo`; it is a package-workflow schematic with no measured data. |
+| `kfactor-demo.png` | Synthetic calibration figure generated from `paper/generate_figures.py` with `python paper/generate_figures.py --demo`; it is not beamline validation. |
+| `workbench.png` | Curated copy of `paper/fig_gui.png`, captured from the current source tree with `python paper/capture_gui_screenshot.py`. It shows the application interface and contains no measurement data. |
+| `hero.svg` | Legacy hand-authored calibration-path diagram retained in this folder; it is no longer used as the root README cover. It contains no measured data. |
 
-`workbench.png` is expected to match `paper/fig_gui.png`. `kfactor-demo.png` is
-the approved README export of the generated synthetic figure and may be updated
-from `paper/fig_kfactor_demo.png` after visual review. When either source is
-regenerated, update its README copy in the same change and record both hashes.
+When a source figure is regenerated, update its README copy in the same change.
