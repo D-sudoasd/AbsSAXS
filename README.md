@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml"><img src="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml/badge.svg" alt="Continuous integration status"></a>
   <a href="https://doi.org/10.5281/zenodo.19687103"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19687103-168AAD" alt="Zenodo concept DOI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3-Clause-4C566A" alt="BSD-3-Clause license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-4C566A" alt="BSD-3-Clause license"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-3776AB" alt="Python 3.10 or later">
 </p>
 
