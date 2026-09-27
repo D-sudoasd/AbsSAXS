@@ -3,7 +3,7 @@
 The corresponding author's declarations for the 13 September 2026 candidate
 are carried forward with their original date. On 26 September, the author
 clarified that AI assistance before this preparation round was limited to
-coding. The current candidate is prepared for submission on 26 September 2026,
+coding. The current candidate is prepared for submission on 27 September 2026,
 and the paper date is aligned to that date. If submission moves to a different
 calendar day, update the paper date and readiness record. Do not infer
 undeclared facts.
@@ -25,7 +25,8 @@ undeclared facts.
 - Commands or interface used: saxsabs calibration and BL19B2 workflow
 - Outputs used in the research: absolute-scale profiles (cm⁻¹) with recorded K, thickness, transmission, and intensity state
 - How `saxsabs` affected the analysis: it is the absolute-intensity calibration step before materials interpretation
-- Public paper, preprint, data, workflow, or editor-visible evidence: Gong et al., Acta Materialia 316 (2026) 122455, doi:10.1016/j.actamat.2026.122455, as the public SAXS/USAXS research context at BL19B2. That article does not cite saxsabs. Subsequent BL19B2 beamtime (raw frames remain beamline-private); editor-visible processing records on request.
+- Public paper, preprint, data, workflow, or editor-visible evidence: Gong et al., Acta Materialia 316 (2026) 122455, doi:10.1016/j.actamat.2026.122455. On 27 September 2026, the author explicitly confirmed that saxsabs processed data for this published study and that processing records are available for editorial verification. That article does not cite saxsabs. The author also uses the software in subsequent BL19B2 work; raw frames remain beamline-private.
+- The exact historical software revision and input/output identities for the published study are held in the author's processing records. The current 2.0.0 submission candidate must not be substituted for that historical revision without checking those records.
 - Independent/external users or integrations, if any: none declared
 
 ## AI usage disclosure
@@ -75,6 +76,16 @@ design decisions, and accept responsibility for the submitted materials.
 Automated checks support that review but do not replace the author's
 responsibility.
 
+### Submission update on 27 September 2026
+
+The author confirmed actual software use in the published study and the
+availability of processing records, then requested completion of the submission
+materials for that evening. Codex assisted with submission dates, consistent
+documentation, validation records, and package assembly. The scientific text,
+figures, and software implementation were not changed by this update. The
+13 September and 26 September declarations retain their original dates; the
+dated candidate record identifies the new verification date and commit.
+
 ## Funding, acknowledgements, sponsor role, and competing interests
 
 - Funding organization(s), grant number(s), or “No external funding”: No external funding
@@ -92,10 +103,10 @@ responsibility.
 
 ## Current candidate and technical record
 
-- Planned submission date: 26 September 2026; the paper date is set to match.
-- The research-use reference retained from the earlier author declaration is
-  doi:10.1016/j.actamat.2026.122455. The article is research context and does
-  not cite `saxsabs`.
+- Planned submission date: 27 September 2026; the paper date is set to match.
+- Research use for doi:10.1016/j.actamat.2026.122455 and the availability of
+  processing records were explicitly confirmed on 27 September 2026. The
+  article does not cite `saxsabs`.
 - The dated desktop validation record holds the exact submitted branch and
   commit, current CI run URLs, repository-identity check, package/PDF results,
   and outputs from both readiness commands. Keep those commit-specific facts

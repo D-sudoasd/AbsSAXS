@@ -5,7 +5,7 @@ Pandoc, excluding the References section and any `[Author input required ...]`
 markers. It tokenizes that plain text with
 `[A-Za-z0-9][A-Za-z0-9'./+^-]*`; the permitted range is 750–1,750 words.
 
-Current manuscript body count: **1,223 words** (Pandoc 3.11, 26 September 2026).
+Current manuscript body count: **1,223 words** (Pandoc 3.11, 27 September 2026).
 Regenerate after any manuscript edit and update this dated value if it changes.
 
 Regenerate the count from the project root after any manuscript edit:

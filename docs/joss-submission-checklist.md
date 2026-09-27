@@ -1,6 +1,6 @@
 # JOSS submission checklist
 
-Updated 26 September 2026 against the current JOSS author and reviewer
+Updated 27 September 2026 against the current JOSS author and reviewer
 documentation.
 
 - [Submission requirements and AI usage policy](https://joss.readthedocs.io/en/latest/submitting.html)
@@ -14,10 +14,10 @@ documentation.
 - Latest GitHub Release: `v1.1.1` from 21 April 2026; earlier release:
   `v1.0.0` from 26 February 2026.
 - The public repository was created on 25 February 2026. Its history contains
-  commits from February through September, seven merged pull requests, tagged
+  commits from February through September, merged pull requests, tagged
   releases, CI, tests, documentation, contribution instructions, and an issue
   tracker. This satisfies the more-than-six-month public-history period as of
-  26 September; JOSS will still assess the full commit distribution and
+  27 September; JOSS will still assess the full commit distribution and
   iteration.
 - The exact candidate commit's successful CI run and the inspected JOSS PDF
   are recorded in the dated desktop submission package. That record also
@@ -39,10 +39,11 @@ documentation.
       period, not only the recent submission-preparation commits.
 - [x] Public tags/releases, pull requests, CI, tests, user documentation,
       `CONTRIBUTING.md`, and support expectations are present.
-- [x] The author has declared real use of `saxsabs` in the SPring-8 BL19B2
-      SAXS/USAXS research workflow. Gong et al., *Acta Materialia* 316 (2026)
-      122455 is contextual research evidence and does not cite the software;
-      do not describe it as a software citation.
+- [x] On 27 September 2026, the author explicitly confirmed that `saxsabs`
+      processed data for Gong et al., *Acta Materialia* 316 (2026) 122455,
+      and that processing records are available for editorial verification.
+      The article does not cite the software; actual use must not be described
+      as a software citation or independent external adoption.
 - [x] The final paper gives concise, specific research-use evidence and does
       not claim external adoption or a software citation without evidence.
 - [x] The final submitted commit has a green full CI run and its test,
@@ -60,7 +61,7 @@ decides scope and significance based on the whole record.
 
 - [x] Markdown paper with valid JOSS YAML metadata and the actual submission
       date in `D Month YYYY` format.
-- [x] Body is 1,211 words under the Pandoc count used by
+- [x] Body is 1,223 words under the Pandoc count used by
       `scripts/check_submission_readiness.py` (required range: 750–1,750).
 - [x] Required sections: `Summary`, `Statement of need`, `State of the field`,
       `Software design`, `Research impact statement`, `AI usage disclosure`,
@@ -77,10 +78,12 @@ decides scope and significance based on the whole record.
       versions where known, locations, and kinds of assistance; and describes
       the verification performed.
 - [x] On 26 September 2026, the human author confirmed that they reviewed,
-      edited, and validated every AI-assisted output in the final candidate,
+      edited, and validated the AI-assisted outputs prepared on that date,
       made the core scientific and software-design decisions, and accept
       responsibility for the submission. Historical AI assistance was limited
-      to coding; the current preparation-round scope remains fully disclosed.
+      to coding; the preparation-round scope remains fully disclosed. The
+      27 September update aligns submission metadata and records the author's
+      research-use clarification; the scientific text and software are unchanged.
 - [x] The PDF generated from the final submitted commit by the JOSS Inara
       workflow is inspected. Older local or desktop PDFs do not validate a new
       paper revision.
@@ -100,6 +103,8 @@ py -3.12 scripts/check_public_candidate.py `
 ```
 
 Use the real submission date and the confirmation record for that exact commit.
+Record the candidate verification date separately from the original dates of
+the author declarations; carrying a declaration forward does not re-date it.
 Keep the dated JSON and command output in the desktop submission package, not
 in the repository. Run the two commands again if the paper or candidate commit
 changes.

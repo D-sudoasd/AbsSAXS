@@ -1,13 +1,14 @@
 # JOSS submission readiness
 
-Updated: 26 September 2026
+Updated: 27 September 2026
 
 ## Candidate and release state
 
 The current source candidate is version `2.0.0`. There is no published
 `v2.0.0` release. GitHub's latest published release is `v1.1.1` (21 April
-2026), preceded by `v1.0.0`. The public repository was created on 25 February
-2026, so its public history exceeds six months on the date of this snapshot.
+2026), preceded by `v1.0.0`. The repository was created on 25 February 2026.
+Its public release records, development history, and author confirmation support
+more than six months of public development on the date of this snapshot.
 
 The exact candidate commit, successful CI run, inspected JOSS PDF, and package
 artifacts are recorded in the dated desktop submission package. Its validation
@@ -35,9 +36,11 @@ The following author-controlled statements were supplied for the 13 September
   `0000-0001-7877-7707`; affiliation: Institute of Metal Research, Chinese
   Academy of Sciences, Shenyang 110016, China.
 - Research use: the author uses `saxsabs` for absolute-intensity SAXS/USAXS at
-  SPring-8 BL19B2. Gong et al., *Acta Materialia* 316 (2026) 122455 is cited as
-  public research context; that article does not cite `saxsabs`. Raw beamline
-  frames remain private.
+  SPring-8 BL19B2. On 27 September 2026, the author additionally confirmed actual
+  software use in Gong et al., *Acta Materialia* 316 (2026) 122455 and the
+  availability of processing records for editorial verification. The article
+  does not cite `saxsabs`; this is author-confirmed use, not a software citation
+  or independent external adoption. Raw beamline frames remain private.
 - No external funding; no competing interests declared.
 - Earlier AI tools declared by the author: GitHub Copilot, Anthropic Claude,
   OpenAI Codex, and xAI Grok. Exact earlier model versions were not retained.
@@ -49,10 +52,16 @@ The 13 September human-review declaration applied to AI-assisted code in that
 candidate. It does not describe the broader AI assistance used during the
 26 September preparation, which is disclosed separately in the current paper.
 On 26 September, the corresponding author confirmed that they reviewed,
-edited, and validated all AI-assisted outputs in the current candidate, made
+edited, and validated the AI-assisted outputs prepared on that date, made
 the core scientific and software-design decisions, and accept responsibility
 for the submitted materials. The dated desktop validation record contains the
 commit-specific technical evidence.
+
+The 27 September update aligns the submission date and documentation, records
+the author's research-use clarification, and refreshes technical verification.
+It leaves the scientific text, figures, and software implementation unchanged.
+Original author-declaration dates are retained separately from the current
+candidate verification date.
 
 ## JOSS paper requirements
 
@@ -70,8 +79,8 @@ describe how they were used and how the generated material's quality and
 correctness were checked. Report only verification that was actually
 completed. The current JOSS policy also requires human authors to confirm
 that they reviewed, edited, and validated all AI-assisted outputs and made the
-core design decisions. The author recorded this confirmation for the current
-candidate on 26 September 2026; see the author confirmation form and dated
+core design decisions. The author recorded this confirmation for the
+26 September candidate; see the author confirmation form and dated
 desktop record.
 
 JOSS's current screening also asks for more than six months of public
@@ -106,7 +115,10 @@ py -3.12 scripts/check_public_candidate.py `
 ```
 
 Replace `YYYY-MM-DD` with the real submission date and use the confirmation
-record for that same date and exact commit. The strict readiness command checks
+record for that same date and exact commit. Its `confirmed_on` field identifies
+the current candidate verification date; separate declaration dates preserve
+when the author originally confirmed authorship, AI review, and other facts.
+The strict readiness command checks
 the paper, citation keys, repository metadata, README targets, versions, clean
 worktree, word count, and date. The public-candidate command checks the remote
 repository identity and CI evidence. The 13 September confirmation record must
