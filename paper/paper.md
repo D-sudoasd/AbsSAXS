@@ -9,7 +9,7 @@ tags:
 authors:
   - name: Delun Gong
     orcid: 0000-0001-7877-7707
-    email: dlgong@imr.ac.cn
+    email: dlgong17s@imr.ac.cn
     corresponding: true
     affiliation: '1'
 affiliations:

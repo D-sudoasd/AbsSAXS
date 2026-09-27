@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [
-  { name = "Delun Gong", email = "dlgong@imr.ac.cn" }
+  { name = "Delun Gong", email = "dlgong17s@imr.ac.cn" }
 ]
 keywords = ["SAXS", "absolute intensity", "calibration", "synchrotron", "scattering"]
 classifiers = [

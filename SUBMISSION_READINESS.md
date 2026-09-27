@@ -32,7 +32,7 @@ archive), and report the version and archive DOI in the review issue.
 The following author-controlled statements were supplied for the 13 September
 2026 candidate and are carried forward from the earlier submission record:
 
-- Sole author and corresponding author: Delun Gong, `dlgong@imr.ac.cn`, ORCID
+- Sole author and corresponding author: Delun Gong, `dlgong17s@imr.ac.cn`, ORCID
   `0000-0001-7877-7707`; affiliation: Institute of Metal Research, Chinese
   Academy of Sciences, Shenyang 110016, China.
 - Research use: the author uses `saxsabs` for absolute-intensity SAXS/USAXS at
