@@ -12,15 +12,22 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><strong>Installation</strong></a> ·
-  <a href="#example-usage">Example usage</a> ·
-  <a href="#workflows">Workflows</a> ·
-  <a href="#workbench">Workbench</a> ·
-  <a href="docs/api.md">API reference</a> ·
-  <a href="#citation">Citation</a>
+  <a href="#installation"><strong>Installation / 安装</strong></a> ·
+  <a href="#example-usage">Examples / 示例</a> ·
+  <a href="#workflows">Workflows / 工作流</a> ·
+  <a href="#workbench">Workbench / 工作台</a> ·
+  <a href="docs/api.md">API</a> ·
+  <a href="#中文快速开始">中文快速开始</a> ·
+  <a href="#citation">Citation / 引用</a>
 </p>
 
 **Absolute-intensity calibration for small-angle X-ray scattering (SAXS).**
+
+**小角 X 射线散射（SAXS）绝对强度标定。**
+
+根据参考标准与测量条件估计标定因子 `K`，记录监测计数、透射率、厚度、
+强度状态及校正历史。提供 Python API、命令行与 SAXSAbs Workbench；
+中文用户可直接进入[快速开始](#中文快速开始)。
 
 A SAXS profile may begin as detector counts or relative intensity. To compare it
 with a reference, its scale must be established from the measurement conditions
