@@ -23,8 +23,7 @@ Python 3.10 or later is required. From a fresh checkout:
 git clone https://github.com/D-sudoasd/AbsSAXS.git
 cd AbsSAXS
 python -m pip install -e ".[dev]"
-pytest -q
-ruff check SASAbs.py saxs_mpl_style.py src tests paper/*.py scripts/*.py
+python scripts/select_checks.py --full
 ```
 
 The `dev` extra installs pytest, Ruff, and development dependencies. To run the
@@ -40,6 +39,13 @@ need the `gui` extra and a local display. See the
 [manual verification checklist](examples/manual-verification.md) for the
 portable synthetic 2D path and Workbench checks.
 
+Select checks for the actual diff, then run the returned test and lint paths.
+Do not repeat installation in an already working environment. See the
+[agent workflow](docs/agent-workflow.md) for commands and expansion criteria.
+For a fresh environment, shared scientific/build changes, or release validation,
+run the full suite with `python -m pytest -q` and the full lint scope with
+`python -m ruff check SASAbs.py saxs_mpl_style.py src tests paper scripts`.
+
 ## Pull requests
 
 Keep each pull request focused. For a behavior change:
@@ -49,7 +55,7 @@ Keep each pull request focused. For a behavior change:
   orchestration separate;
 - update the README, API reference, or workflow documentation when public
   behavior changes;
-- run the relevant tests and Ruff checks, and include the exact commands and
+- run the selected tests and Ruff checks, and include the exact commands and
   results in the pull-request description;
 - describe any instrument-specific assumptions or inputs needed to reproduce
   the workflow.

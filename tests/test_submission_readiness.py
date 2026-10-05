@@ -22,6 +22,26 @@ def _load_readiness_checker():
 readiness = _load_readiness_checker()
 
 
+def test_generated_directory_scan_prunes_contents_and_git(tmp_path, monkeypatch):
+    _write(tmp_path / "build" / "deep" / "__pycache__" / "large.pyc")
+    _write(tmp_path / "src" / "__pycache__" / "large.pyc")
+    _write(tmp_path / ".git" / "objects" / "build" / "pack")
+    _write(tmp_path / "pkg.egg-info" / "nested" / "PKG-INFO")
+    visited = []
+    original_walk = readiness.os.walk
+
+    def measured_walk(*args, **kwargs):
+        for item in original_walk(*args, **kwargs):
+            visited.append(Path(item[0]).relative_to(tmp_path))
+            yield item
+
+    monkeypatch.setattr(readiness.os, "walk", measured_walk)
+    assert readiness.generated_directories(tmp_path) == [
+        Path("build"), Path("pkg.egg-info"), Path("src/__pycache__")
+    ]
+    assert visited == [Path("."), Path("src")]
+
+
 def _write(path: Path, text: str = "present") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -164,6 +184,14 @@ def test_strict_gate_passes_with_complete_evidence_record(tmp_path, monkeypatch,
     monkeypatch.setattr(readiness, "ROOT", tmp_path)
     monkeypatch.setattr(readiness, "PAPER", tmp_path / "paper" / "paper.md")
     monkeypatch.setattr(readiness, "paper_word_count", lambda: 900)
+    read_counts = {}
+    original_read = readiness.read
+
+    def counted_read(path):
+        read_counts[path.name] = read_counts.get(path.name, 0) + 1
+        return original_read(path)
+
+    monkeypatch.setattr(readiness, "read", counted_read)
     _mock_clean_git(monkeypatch)
     monkeypatch.setattr(
         readiness.sys,
@@ -182,7 +210,14 @@ def test_strict_gate_passes_with_complete_evidence_record(tmp_path, monkeypatch,
     assert "strict mode cannot use future submission date" in capsys.readouterr().out
 
     monkeypatch.setattr(readiness, "current_date", lambda: readiness.date(2026, 8, 26))
+    read_counts.clear()
     assert readiness.main() == 0
+    metadata_counts = {
+        name: read_counts[name] for name in ("CITATION.cff", "codemeta.json", ".zenodo.json")
+    }
+    assert metadata_counts == {
+        "CITATION.cff": 1, "codemeta.json": 1, ".zenodo.json": 1,
+    }
 
 
 def test_strict_gate_accepts_confirmed_main_after_merge(tmp_path, monkeypatch):

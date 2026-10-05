@@ -167,11 +167,7 @@ def _operator_provenance_key(value: object) -> str | None:
     return _OPERATOR_PROVENANCE_ALIASES.get(normalized)
 
 
-def _read_text_operator_provenance(path: str | Path) -> dict[str, str]:
-    try:
-        lines = Path(path).read_text(encoding="utf-8-sig", errors="strict").splitlines()
-    except (OSError, UnicodeError):
-        return {}
+def _read_text_operator_provenance(lines: list[str]) -> dict[str, str]:
     provenance: dict[str, str] = {}
     for line in lines:
         stripped = line.strip()
@@ -681,8 +677,7 @@ def _physical_width_from_data_lines(lines: list[str]) -> int:
     return widths[0]
 
 
-def _physical_data_width(path: str | Path) -> int:
-    lines = Path(path).read_text(encoding="utf-8-sig", errors="ignore").splitlines()
+def _physical_data_width(lines: list[str]) -> int:
     first_data_index: int | None = None
     first_tokens: list[str] = []
     for index, line in enumerate(lines):
@@ -699,13 +694,7 @@ def _physical_data_width(path: str | Path) -> int:
     return _physical_width_from_data_lines(data_lines)
 
 
-def _read_plain_header_tokens(path: str | Path) -> list[str] | None:
-    try:
-        lines = Path(path).read_text(encoding="utf-8-sig", errors="ignore").splitlines()
-    except ValueError:
-        raise
-    except Exception:
-        return None
+def _read_plain_header_tokens(lines: list[str]) -> list[str] | None:
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -768,12 +757,7 @@ def _normalise_inferred_header_columns(
     return out
 
 
-def _read_comment_header_dataframe(path: str | Path) -> pd.DataFrame | None:
-    try:
-        lines = Path(path).read_text(encoding="utf-8-sig", errors="ignore").splitlines()
-    except Exception:
-        return None
-
+def _read_comment_header_dataframe(lines: list[str]) -> pd.DataFrame | None:
     header_candidates: list[tuple[int, list[str], int]] = []
     for idx, line in enumerate(lines):
         stripped = line.strip()
@@ -912,7 +896,7 @@ def _parse_semicolon_decimal_comma_token(value: str) -> float:
     return number
 
 
-def _read_semicolon_decimal_comma_dataframe(path: str | Path) -> pd.DataFrame | None:
+def _read_semicolon_decimal_comma_dataframe(lines: list[str]) -> pd.DataFrame | None:
     """Read an unambiguous semicolon/decimal-comma table, if present.
 
     The generic pandas delimiter inference treats both delimiters as field
@@ -921,7 +905,6 @@ def _read_semicolon_decimal_comma_dataframe(path: str | Path) -> pd.DataFrame | 
     delimiter, and validates every data value before returning.
     """
 
-    lines = Path(path).read_text(encoding="utf-8-sig", errors="strict").splitlines()
     meaningful: list[tuple[int, str]] = []
     comment_header_tokens: list[str] | None = None
     for index, line in enumerate(lines):
@@ -1105,17 +1088,38 @@ def read_external_1d_profile(
     *,
     allow_unidentified_intensity: bool = False,
 ) -> dict[str, Any]:
+    """Read a profile using one text snapshot per call; no state survives the call."""
+    profile, _ = _read_profile_with_table(
+        path, allow_unidentified_intensity=allow_unidentified_intensity
+    )
+    return profile
+
+
+def _read_profile_with_table(
+    path: str | Path,
+    *,
+    allow_unidentified_intensity: bool = False,
+) -> tuple[dict[str, Any], pd.DataFrame | None]:
+    """Also retain the selected text table for CLI column overrides.
+
+    XML/HDF5 readers keep their existing specialized paths and return no table.
+    Text grammar trials share one buffer, while their ranking and validation
+    remain unchanged. A subsequent call always reads the current file again.
+    """
     p = Path(path)
     ext = p.suffix.lower()
 
     # Route to specialized readers based on file extension
     if ext == ".xml":
         try:
-            return read_cansas1d_xml(p)
+            return read_cansas1d_xml(p), None
         except (ET.ParseError, OSError, UnicodeError, ValueError) as exc:
             raise ValueError(f"Cannot parse canSAS XML file: {p.name}") from exc
     elif ext in (".h5", ".hdf5", ".hdf", ".nxs"):
-        return read_nxcansas_h5(p)
+        return read_nxcansas_h5(p), None
+
+    text = p.read_text(encoding="utf-8-sig", errors="strict")
+    lines = text.splitlines()
 
     dfs: list[pd.DataFrame] = []
     errs: list[str] = []
@@ -1123,17 +1127,17 @@ def read_external_1d_profile(
     # Detect this grammar before any generic pandas trial: splitting both
     # comma and semicolon would otherwise produce a plausible but wrong Q/I
     # pair and the later heuristic cannot recover the lost decimal marks.
-    semicolon_decimal_df = _read_semicolon_decimal_comma_dataframe(p)
+    semicolon_decimal_df = _read_semicolon_decimal_comma_dataframe(lines)
     if semicolon_decimal_df is not None:
         dfs.append(semicolon_decimal_df)
         has_comment_header = False
         plain_header_tokens = None
         physical_data_width = semicolon_decimal_df.shape[1]
     else:
-        comment_header_df = _read_comment_header_dataframe(p)
+        comment_header_df = _read_comment_header_dataframe(lines)
         has_comment_header = comment_header_df is not None
-        plain_header_tokens = _read_plain_header_tokens(p)
-        physical_data_width = _physical_data_width(p)
+        plain_header_tokens = _read_plain_header_tokens(lines)
+        physical_data_width = _physical_data_width(lines)
         if comment_header_df is not None:
             dfs.append(comment_header_df)
 
@@ -1146,7 +1150,7 @@ def read_external_1d_profile(
 
     for kw in ([] if semicolon_decimal_df is not None else read_trials):
         try:
-            df = pd.read_csv(path, encoding="utf-8-sig", **kw)
+            df = pd.read_csv(StringIO(text), **kw)
             if kw.get("header") is None and df is not None and not df.empty:
                 position_columns = all(
                     isinstance(column, (int, np.integer)) for column in df.columns
@@ -1182,16 +1186,17 @@ def read_external_1d_profile(
         raise ValueError(f"Cannot parse file: {Path(path).name} ({'; '.join(errs[:2])})")
 
     best: dict[str, Any] | None = None
+    best_table: pd.DataFrame | None = None
     best_rank: tuple[int, int] = (-1, -1)
 
     for df in dfs:
-        numeric_cols: dict[Any, pd.Series] = {}
+        numeric_cols: dict[Any, np.ndarray] = {}
         for col in df.columns:
             s = pd.to_numeric(df[col], errors="coerce")
             arr = s.to_numpy(dtype=np.float64, na_value=np.nan)
             cnt = int(np.isfinite(arr).sum())
             if cnt >= 3:
-                numeric_cols[col] = s
+                numeric_cols[col] = arr
 
         if len(numeric_cols) < 2:
             continue
@@ -1248,8 +1253,8 @@ def read_external_1d_profile(
             suffixes=("error", "sigma", "uncertainty"),
         )
 
-        x = pd.to_numeric(df[x_col], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
-        intensity = pd.to_numeric(df[i_col], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)
+        x = numeric_cols[x_col]
+        intensity = numeric_cols[i_col]
         if df.attrs.get("saxsabs_semicolon_decimal_comma") and (
             not np.all(np.isfinite(x)) or not np.all(np.isfinite(intensity))
         ):
@@ -1262,7 +1267,12 @@ def read_external_1d_profile(
         intensity = intensity[mask]
 
         if err_named and err_col is not None:
-            err = pd.to_numeric(df[err_col], errors="coerce").to_numpy(dtype=np.float64, na_value=np.nan)[mask]
+            error_values = numeric_cols.get(err_col)
+            if error_values is None:
+                error_values = pd.to_numeric(df[err_col], errors="coerce").to_numpy(
+                    dtype=np.float64, na_value=np.nan
+                )
+            err = error_values[mask]
             err = np.where(np.isfinite(err), err, np.nan)
         else:
             err = np.full_like(intensity, np.nan, dtype=np.float64)
@@ -1277,6 +1287,7 @@ def read_external_1d_profile(
         rank = (pts, semantic_score)
         if rank > best_rank:
             best_rank = rank
+            best_table = df
             best = {
                 "x": x,
                 "intensity": intensity,
@@ -1296,10 +1307,10 @@ def read_external_1d_profile(
         raise ValueError(f"Cannot identify valid numeric columns in {Path(path).name}")
     if _q_header_has_unsupported_unit_syntax(best["x_col"]):
         raise ValueError(f"Unsupported or malformed Q-unit header in {Path(path).name}")
-    best["operator_provenance"] = _read_text_operator_provenance(p)
+    best["operator_provenance"] = _read_text_operator_provenance(lines)
     intensity = np.asarray(best.pop("intensity"), dtype=np.float64)
     uncertainty = np.asarray(best.pop("uncertainty"), dtype=np.float64)
-    return _attach_intensity_arrays(best, intensity, uncertainty)
+    return _attach_intensity_arrays(best, intensity, uncertainty), best_table
 
 
 # ---------------------------------------------------------------------------

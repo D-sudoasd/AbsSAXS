@@ -30,10 +30,7 @@ from .core.intensity_state import (
 from .core.normalization import compute_norm_factor
 from .io.parsers import (
     _attach_intensity_arrays,
-    _normalise_inferred_header_columns,
-    _physical_data_width,
-    _read_plain_header_tokens,
-    _read_comment_header_dataframe,
+    _read_profile_with_table,
     _unit_delimiters_are_balanced,
     parse_header_values,
     profile_intensity,
@@ -83,36 +80,6 @@ def _column_score(name: str, role: str) -> int:
 
 def _available_columns_message(columns: list[object]) -> str:
     return "Available columns: " + ", ".join(str(col) for col in columns)
-
-
-def _read_tabular_dataframe(path: Path) -> pd.DataFrame:
-    comment_header_df = _read_comment_header_dataframe(path)
-    if comment_header_df is not None:
-        return comment_header_df
-
-    errors: list[str] = []
-    header_tokens = _read_plain_header_tokens(path)
-    data_width = _physical_data_width(path)
-    read_trials = [
-        {"sep": None, "engine": "python", "comment": "#"},
-        {"sep": r"[,\s;]+", "engine": "python", "comment": "#"},
-    ]
-    for kwargs in read_trials:
-        try:
-            df = pd.read_csv(path, **kwargs)
-        except Exception as exc:
-            errors.append(str(exc))
-            continue
-        if df is not None and not df.empty and df.shape[1] >= 2:
-            df = _normalise_inferred_header_columns(
-                df,
-                header_tokens=header_tokens,
-                data_width=data_width,
-            )
-            return df
-
-    detail = f" ({'; '.join(errors[:2])})" if errors else ""
-    raise ValueError(f"Cannot parse tabular profile for column overrides: {path.name}{detail}")
 
 
 def _resolve_column(
@@ -270,7 +237,7 @@ def _read_profile_for_estimate(
     if q_col is None and i_col is None:
         return read_external_1d_profile(path)
 
-    parsed_profile = read_external_1d_profile(
+    parsed_profile, df = _read_profile_with_table(
         path,
         allow_unidentified_intensity=i_col is not None,
     )
@@ -297,7 +264,8 @@ def _read_profile_for_estimate(
             )
         return reused
 
-    df = _read_tabular_dataframe(path)
+    if df is None:
+        raise ValueError(f"Column overrides require a text table: {path.name}")
     columns = list(df.columns)
     preserve_parsed_q_metadata = False
     if q_col is not None and _q_selector_matches_unitful_profile(

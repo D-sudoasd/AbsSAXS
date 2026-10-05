@@ -9,30 +9,91 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.plan.outputs.tests }}
+      lint: ${{ steps.plan.outputs.lint }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      paper: ${{ steps.plan.outputs.paper }}
+      package: ${{ steps.plan.outputs.package }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Select checks from a validated baseline
+        id: plan
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A failed, missing or still-running baseline is not reusable evidence.
+          # This also prevents a later docs-only push from hiding an earlier failure.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ -z "$BASE" ] || [[ "$BASE" =~ ^0+$ ]]; then
+            python scripts/select_checks.py --full --github-output "$GITHUB_OUTPUT"
+          else
+            validated="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+              --branch "$BASE_BRANCH" --commit "$BASE" --status success --limit 1 \
+              --json headSha --jq 'length' 2>/dev/null || echo 0)"
+            if [ "$validated" != 1 ]; then
+              python scripts/select_checks.py --full --github-output "$GITHUB_OUTPUT"
+            else
+              git fetch --no-tags --depth=1 origin "$BASE"
+              python scripts/select_checks.py --base "$BASE" --head HEAD --github-output "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  lint:
+    needs: changes
+    if: needs.changes.outputs.lint != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install 'ruff>=0.5'
+      - name: Ruff
+        env:
+          LINT_PATHS: ${{ needs.changes.outputs.lint }}
+        run: >-
+          python -c "import json, os, subprocess, sys;
+          sys.exit(subprocess.call([sys.executable, '-m', 'ruff', 'check',
+          *json.loads(os.environ['LINT_PATHS'])]))"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.tests != '[]'
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python }}
       - name: Install
         run: |
           python -m pip install --upgrade pip
           pip install -e .[dev,gui,bl19b2,hdf5]
-      - name: Ruff
-        run: ruff check SASAbs.py saxs_mpl_style.py src tests paper/*.py scripts/*.py
       - name: Pytest
-        run: pytest -q --tb=short
+        env:
+          TEST_PATHS: ${{ needs.changes.outputs.tests }}
+        run: >-
+          python -c "import json, os, subprocess, sys;
+          sys.exit(subprocess.call([sys.executable, '-m', 'pytest', '-q', '--tb=short',
+          *json.loads(os.environ['TEST_PATHS'])]))"
 
   paper:
+    needs: changes
+    if: needs.changes.outputs.paper == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -52,6 +113,8 @@ jobs:
           if-no-files-found: error
 
   package:
+    needs: changes
+    if: needs.changes.outputs.package == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

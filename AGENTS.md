@@ -1,30 +1,43 @@
-# Repository Guidelines
+# AbsSAXS agent instructions
 
-## Project Structure & Module Organization
+Complete authorized work and appropriate verification; preserve unrelated changes.
+Use established SAXS terminology. Keep measured values, units, missingness and
+provenance explicit; synthetic fixtures establish engineering behavior only.
+Do not commit private beamline data, credentials or large generated outputs.
 
-`src/saxsabs/` contains the installable Python package. Core scientific logic lives in `src/saxsabs/core/`, file parsing and exporters in `src/saxsabs/io/`, and command-line wiring in `src/saxsabs/cli.py` plus `src/saxsabs/__main__.py`. Root-level `SASAbs.py`, `saxsabs_workbench.py`, `saxsabs_workbench.pyw`, and `Start_SAXSAbs_Workbench.bat` support the legacy/desktop workbench. Tests are in `tests/`. Example inputs and manual workflow checks are in `examples/`; architecture and reviewer documentation are in `docs/`; JOSS paper assets are under `paper/`.
+## Start from the task and current changes
 
-## Build, Test, and Development Commands
+- Reuse context already available in this conversation. Inspect Git status/diff
+  and the relevant entry point; search its callers/tests only as needed.
+- Read bounded sections of relevant files. Do not pre-read a fixed document set,
+  build a repository map, scan generated outputs, or load every available skill.
+- Batch independent reads in one tool call. Use parallel work only when it saves
+  elapsed time without shared mutations or repeated investigation.
 
-- `pip install -e .[dev]`: install the package in editable mode with pytest, ruff, and plotting test dependencies.
-- `pip install -e .[gui,hdf5]`: install optional GUI, detector-image, and HDF5 support when working on workbench or NXcanSAS paths.
-- `pytest -q`: run the automated test suite configured by `pyproject.toml`.
-- `ruff check src tests`: run static lint checks with the repository's 100-character line limit.
-- `python -m saxsabs --version` or `saxsabs --version`: verify the CLI entry point after installation.
-- `python saxsabs_workbench.py --lang en`: launch the desktop workbench locally.
+## Select and reuse evidence
 
-## Coding Style & Naming Conventions
+`python scripts/select_checks.py --base origin/main` returns a read-only check
+plan from changed paths, including untracked files. Use a validated base; use
+`--full` for an explicit deep check. Run the selected tests and lint once for
+the current contents. Reuse passing results until relevant code, inputs or
+configuration change; investigate failures locally before expanding scope.
+Shared scientific calculations, I/O contracts, dependencies, CI configuration,
+shared test fixtures and unknown paths require the full suite. Release validation
+also retains installation/artifact checks. Never skip numerical, unit,
+missingness, provenance or resume-integrity checks for speed.
 
-Use Python 3.10+ and follow the existing style: 4-space indentation, explicit imports, small pure functions for scientific calculations, and type hints where they clarify public or shared behavior. Keep package code inside `src/saxsabs/`; avoid adding new root-level modules unless they are launchers or compatibility shims. Name tests `test_*.py`, test functions `test_*`, and test classes `Test*`. Keep GUI orchestration separate from reusable core logic.
+## Route only when relevant
 
-## Testing Guidelines
+- Package: `src/saxsabs/`; calculations: `core/`; I/O: `io/`; CLI: `cli.py`.
+  Tests mirror these concerns under `tests/`. Root launchers and `SASAbs.py`
+  contain the desktop/legacy workbench; keep reusable logic in the package.
+- Check selection, setup and workflow details: [agent workflow](docs/agent-workflow.md).
+- GUI or detector workflow changes: relevant sections of
+  [manual verification](examples/manual-verification.md) and `examples/minimal_2d/`.
+- BL19B2 batch semantics: [batch runbook](docs/bl19b2_abs2d_batch_runbook.md).
+- JOSS submission or release: [contributing](CONTRIBUTING.md) and
+  [submission checklist](docs/joss-submission-checklist.md).
 
-Add or update focused pytest coverage for behavior changes, especially validation, numerical calculations, parsers, and CLI output. Use `tmp_path`, `capsys`, and `monkeypatch` patterns already present in `tests/`. For GUI or end-to-end workflow changes, also check `examples/manual-verification.md` and the minimal 2D package in `examples/minimal_2d/`.
-
-## Commit & Pull Request Guidelines
-
-Recent history uses short subjects, often typed prefixes such as `fix:`, `test:`, and `style:`. Prefer `type: imperative summary` for new commits, for example `fix: reject invalid transmission values`. Pull requests should describe the changed workflow or API, link relevant issues, include tests or manual verification notes, and update docs when CLI, GUI, or public API behavior changes.
-
-## Security & Configuration Tips
-
-Do not commit beamline-private datasets, credentials, or large generated outputs. Keep examples anonymized and small. Optional dependencies should remain optional unless the core CLI/API truly requires them.
+Use Python 3.10+, four-space indentation, explicit imports and the existing
+100-character Ruff configuration. Keep optional dependencies optional. Describe
+behavior changes and actual verification in commits/PRs; use `type: imperative summary`.

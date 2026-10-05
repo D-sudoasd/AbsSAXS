@@ -52,6 +52,20 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def generated_directories(root: Path) -> list[Path]:
+    """Report generated directory roots without traversing their contents."""
+    names = {"__pycache__", ".pytest_cache", ".ruff_cache", "build", "dist"}
+    generated: list[Path] = []
+    for parent, directories, _ in os.walk(root):
+        for name in directories[:]:
+            if name == ".git":
+                directories.remove(name)
+            elif name in names or name.endswith(".egg-info"):
+                generated.append((Path(parent) / name).relative_to(root))
+                directories.remove(name)
+    return sorted(generated)
+
+
 def current_date() -> date:
     """Return the runtime date; isolated for deterministic strict-gate tests."""
     return date.today()
@@ -327,11 +341,14 @@ def main() -> int:
     if missing_anchors:
         failures.append(f"README has missing local anchors: {sorted(missing_anchors)}")
 
+    citation_text = read(ROOT / "CITATION.cff")
+    codemeta = json.loads(read(ROOT / "codemeta.json"))
+    zenodo = json.loads(read(ROOT / ".zenodo.json"))
     versions = {
         "pyproject": version,
-        "citation": re.search(r'(?m)^version: "([^"]+)"$', read(ROOT / "CITATION.cff")),
-        "codemeta": json.loads(read(ROOT / "codemeta.json"))["version"],
-        "zenodo": json.loads(read(ROOT / ".zenodo.json"))["version"],
+        "citation": re.search(r'(?m)^version: "([^"]+)"$', citation_text),
+        "codemeta": codemeta["version"],
+        "zenodo": zenodo["version"],
     }
     citation_match = versions["citation"]
     if citation_match is None:
@@ -342,9 +359,6 @@ def main() -> int:
         failures.append(f"version metadata disagree: {versions}")
 
     canonical = CANONICAL_REPOSITORY
-    citation_text = read(ROOT / "CITATION.cff")
-    codemeta = json.loads(read(ROOT / "codemeta.json"))
-    zenodo = json.loads(read(ROOT / ".zenodo.json"))
     if f'repository-code: "{canonical}"' not in citation_text:
         failures.append("CITATION.cff does not use the canonical repository")
     if f'url: "{canonical}"' not in citation_text:
@@ -392,12 +406,7 @@ def main() -> int:
         if not path.is_file() or path.stat().st_size == 0:
             failures.append(f"missing or empty required file: {path.relative_to(ROOT)}")
 
-    generated_names = {"__pycache__", ".pytest_cache", ".ruff_cache", "build", "dist"}
-    generated = [
-        path.relative_to(ROOT)
-        for path in ROOT.rglob("*")
-        if path.is_dir() and (path.name in generated_names or path.name.endswith(".egg-info"))
-    ]
+    generated = generated_directories(ROOT)
     if generated:
         failures.append(f"generated cache/build directories remain: {generated}")
 
