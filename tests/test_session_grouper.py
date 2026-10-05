@@ -6,7 +6,31 @@ from pathlib import Path
 import tempfile
 import time
 
-from saxsabs.core.session_grouper import cluster_by_acquisition_time
+from saxsabs.core.session_grouper import (
+    AcquisitionGroup,
+    add_group_to_meta,
+    cluster_by_acquisition_time,
+)
+
+
+def test_group_metadata_preserves_source_and_adds_group_fields():
+    source = {"sample": "standard", "transmission": 0.8}
+    group = AcquisitionGroup("beamtime_1", [Path("a.tif"), Path("b.tif")], start_ts=1700000000.0)
+    assert add_group_to_meta(source, group) == {
+        **source,
+        "group_id": "beamtime_1",
+        "group_size": 2,
+        "group_start_ts": 1700000000.0,
+    }
+    assert source == {"sample": "standard", "transmission": 0.8}
+
+
+def test_no_group_metadata_preserves_source_and_marks_missing_group():
+    source = {"sample": "ungrouped", "group_id": "previous", "group_size": 2}
+    assert add_group_to_meta(source, None) == {
+        **source, "group_id": None, "group_size": None,
+    }
+    assert source == {"sample": "ungrouped", "group_id": "previous", "group_size": 2}
 
 
 def test_empty_input():

@@ -43,8 +43,7 @@ Select checks for the actual diff, then run the returned test and lint paths.
 Do not repeat installation in an already working environment. See the
 [agent workflow](docs/agent-workflow.md) for commands and expansion criteria.
 For a fresh environment, shared scientific/build changes, or release validation,
-run the full suite with `python -m pytest -q` and the full lint scope with
-`python -m ruff check SASAbs.py saxs_mpl_style.py src tests paper scripts`.
+use `--full` and run its returned test and lint paths with the same workflow.
 
 ## Pull requests
 

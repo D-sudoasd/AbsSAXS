@@ -33,7 +33,9 @@ the complete diff remains authoritative before delivery. `--head REF` compares
 committed revisions and intentionally excludes local untracked files.
 
 The selector reads path names from one Git diff and, locally, one untracked-file
-query. It does not parse source, collect all tests or create a repository index.
+query. Moves retain both old and new paths so removed code or linked documents
+cannot disappear through Git rename detection. It does not parse source, collect
+all tests or create a repository index.
 Its small route table lists isolated entry points and consumer tests. Unknown
 files, deleted code, shared scientific calculations, parsers/exporters, build
 configuration, CI and shared test fixtures select `tests` and the full lint
@@ -91,7 +93,8 @@ that source-tree check. Full submission checks remain an explicit deep path.
 
 CI uses the same selector. It first checks for a successful `ci.yml` run on the
 exact base revision and branch. A missing, failed, pending or inaccessible
-baseline selects full validation; manual dispatch also selects the full path.
+baseline selects full validation, including a failed base fetch; manual dispatch
+also selects the full path.
 This prevents a small follow-up commit from concealing an earlier failed change.
 The lookup uses the documented [GitHub CLI run filters](https://cli.github.com/manual/gh_run_list).
 

@@ -128,7 +128,8 @@ def changed_paths(base: str, head: str | None = None) -> list[str]:
         output = subprocess.check_output(["git", *args], cwd=ROOT)
         return [part.decode("utf-8") for part in output.split(b"\0") if part]
 
-    paths = git("diff", "--name-only", "-z", base, *([head] if head else []), "--")
+    # Keep both sides of a move: rename folding can hide deleted code or links.
+    paths = git("diff", "--no-renames", "--name-only", "-z", base, *([head] if head else []), "--")
     if head is None:
         paths.extend(git("ls-files", "--others", "--exclude-standard", "-z"))
     return paths

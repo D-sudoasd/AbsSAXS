@@ -43,9 +43,10 @@ jobs:
               --json headSha --jq 'length' 2>/dev/null || echo 0)"
             if [ "$validated" != 1 ]; then
               python scripts/select_checks.py --full --github-output "$GITHUB_OUTPUT"
-            else
-              git fetch --no-tags --depth=1 origin "$BASE"
+            elif git fetch --no-tags --depth=1 origin "$BASE"; then
               python scripts/select_checks.py --base "$BASE" --head HEAD --github-output "$GITHUB_OUTPUT"
+            else
+              python scripts/select_checks.py --full --github-output "$GITHUB_OUTPUT"
             fi
           fi
 

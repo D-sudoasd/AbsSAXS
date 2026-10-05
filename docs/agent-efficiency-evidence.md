@@ -100,11 +100,56 @@ The release workflow remains complete. These job/count comparisons describe
 the implemented routes; they do not claim a measured remote wall-time reduction
 or a model-level reduction in agent tool calls.
 
+## Executable workflow replay
+
+The final review added `test_ci_planner_replay`. It executes the current CI
+planning step and selector, using real two-commit Git repositories for diff-based
+routes. GitHub responses and remote fetch success/failure are controlled; Git
+traces count actual diff calls. Full-fallback cases do not create or parse a
+repository because `--full` does not need a diff. The workflow and selector
+source are each read once by module-scoped test fixtures.
+
+Baseline counts come from `2439fa3:.github/workflows/ci.yml`; current routes come
+from the replay's emitted JSON and conditional jobs. These are reproducible
+workflow command/job counts, not observed GPT-6 Astra outer tool calls or remote
+wall time. Runner actions, dependency installation, Python command wrappers and
+fixture setup commits are excluded. Pytest and Ruff counts mean invocations of
+those verification tools; the replay does not rerun their selected suites.
+
+| Task / baseline evidence | Planner calls: GH / fetch / selector / diff | Pytest jobs, before → after | Ruff runs | Paper / package jobs, after |
+| --- | ---: | ---: | ---: | --- |
+| Workflow prose, successful base | 1 / 1 / 1 / 1 | 12 → 0 | 12 → 0 | 0 / 0 |
+| CLI, successful base | 1 / 1 / 1 / 1 | 12 → 3 | 12 → 1 | 0 / 1 |
+| Shared parser, successful base | 1 / 1 / 1 / 1 | 12 → 12 | 12 → 1 | 0 / 1 |
+| Missing/unsuccessful base run or GH lookup error | 1 / 0 / 1 / 0 | 12 → 12 | 12 → 1 | 1 / 1 |
+| Successful run but base fetch fails | 1 / 1 / 1 / 0 | 12 → 12 | 12 → 1 | 1 / 1 |
+| Manual dispatch or empty/zero base SHA | 0 / 0 / 1 / 0 | 12 → 12 | 12 → 1 | 1 / 1 |
+
+The old workflow had no planning subprocesses and built paper/package artifacts
+for every task. The planner therefore adds a bounded decision step; it saves
+validation work on local changes while retaining the deep path when evidence is
+insufficient. A failed fetch now takes that deep path instead of stopping before
+validation. No remote lookup or Git diff is repeated within one plan.
+
+Real-Git regression tests also cover code/document moves. Rename detection must
+not hide a removed source or README link: both old and new paths are classified
+using `--no-renames`, without another Git query. The selected session-grouper
+tests cover both branches of its public metadata helper as well as clustering.
+
+Reproduce the routing trace in a configured environment with Git and Bash
+(Git for Windows includes Bash):
+
+```powershell
+python -m pytest -q -s tests/test_check_selection.py -k ci_planner_replay
+```
+
 ## Verification and reproduction
 
-The complete local suite passed: **1,216 tests**. Full project Ruff passed.
-`actionlint` 1.7.12 accepted the modified CI workflow. Wheel and sdist builds
-succeeded; final committed artifacts are checked by CI. The installed-wheel
+The initial complete local suite passed: **1,216 tests**. The final review added
+13 regression cases; **1,229 tests passed in 38.35 seconds**, with full project
+Ruff also passing. `actionlint` 1.7.12 accepted the initial CI workflow; the final
+planner shell is exercised by the executable replay above. Wheel and sdist builds
+succeeded during the initial validation; committed artifacts are checked by CI. The installed-wheel
 smoke uses the existing dependency environment and is not a fresh-dependency
 installation claim.
 
