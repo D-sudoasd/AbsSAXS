@@ -20,6 +20,18 @@ For a separate, minimal CLI example, the bundled `k_measured.csv` and `k_referen
 
 For measured data, the required normalization and thickness context must be supplied consistently. Input intensity states gate incompatible operations.
 
+## 原理示意 / Principle schematic
+
+<p align="center">
+  <img src="assets/readme/principle.png" width="100%" alt="Reference-based SAXS absolute-intensity calibration — conceptual schematic / 概念示意图">
+</p>
+
+*参考标准与相对强度在共同 q 区间比较确定标定因子 K；厚度、监测与透射信息随绝对强度输出保留。曲线仅示意。*
+
+*A reference standard sets K over a shared q range; thickness and normalization context accompany the absolute-intensity profile. Curves are conceptual.*
+
+[查看完整示意图 / View full-size schematic](assets/readme/principle.png)
+
 ## What it does
 
 - Normalizes accumulated detector counts using either a beam-monitor count
