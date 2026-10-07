@@ -1,45 +1,20 @@
 # AbsSAXS
 
-<p align="center">
-  <a href="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml"><img src="https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml/badge.svg" alt="Continuous integration status"></a>
-  <a href="https://doi.org/10.5281/zenodo.19687103"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19687103-168AAD" alt="Zenodo concept DOI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-BSD--3--Clause-4C566A" alt="BSD-3-Clause license"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-3776AB" alt="Python 3.10 or later">
-</p>
+**将相对 SAXS 强度标定为绝对强度，同时保留监测计数、透射率、厚度和处理记录。**
 
-<p align="center">
-  <img src="assets/readme/saxsabs-overview.png" width="100%" alt="Conceptual illustration of SAXS absolute-intensity calibration; this artwork is not an experimental measurement.">
-</p>
+Absolute-intensity calibration for small-angle X-ray scattering. The `saxsabs` package provides a Python API, command line, SAXSAbs Workbench, and a documented strict BL19B2 detector workflow for researchers who need calibration context alongside exported profiles.
 
-<p align="center">
-  <a href="#installation"><strong>Installation / 安装</strong></a> ·
-  <a href="#example-usage">Examples / 示例</a> ·
-  <a href="#workflows">Workflows / 工作流</a> ·
-  <a href="#workbench">Workbench / 工作台</a> ·
-  <a href="docs/api.md">API</a> ·
-  <a href="#中文快速开始">中文快速开始</a> ·
-  <a href="#citation">Citation / 引用</a>
-</p>
+[安装](#installation) · [第一个标定示例](#example-usage) · [选择工作流](#workflows) · [桌面界面](#workbench) · [中文快速开始](#中文快速开始) · [引用](#citation)
 
-**Absolute-intensity calibration for small-angle X-ray scattering (SAXS).**
+[![CI](https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml/badge.svg)](https://github.com/D-sudoasd/AbsSAXS/actions/workflows/ci.yml) [![BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-455A64)](LICENSE) [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19687103-168AAD)](https://doi.org/10.5281/zenodo.19687103)
 
-**小角 X 射线散射（SAXS）绝对强度标定。**
+![合成标定示例：参考曲线、缩放测量、比值与标定因子；不是束线实测数据](assets/readme/kfactor-demo.png)
 
-根据参考标准与测量条件估计标定因子 `K`，记录监测计数、透射率、厚度、
-强度状态及校正历史。提供 Python API、命令行与 SAXSAbs Workbench；
-中文用户可直接进入[快速开始](#中文快速开始)。
+The figure demonstrates robust calibration on synthetic profiles with a planted `K = 0.035`; its [source and regeneration method](assets/readme/README.md) are recorded in the repository. It is not beamline validation.
 
-A SAXS profile may begin as detector counts or relative intensity. To compare it
-with a reference, its scale must be established from the measurement conditions
-and calibration standard. AbsSAXS estimates the scale factor `K` and records
-the monitor, transmission, thickness, intensity state, and corrections
-associated with the result.
+For a separate, minimal CLI example, the bundled `k_measured.csv` and `k_reference.csv` declare `relative` and `absolute_cm^-1` intensity states and report `k_factor: 2.0`. See the command and prerequisites in [Example usage](#example-usage).
 
-The `saxsabs` Python package provides a command-line interface, a Python API,
-and the SAXSAbs Workbench desktop application. It supports external 1D profiles
-and a strict 2D workflow for SPring-8 BL19B2 conventions. The project is intended
-for beamline scientists and SAXS researchers who need to calibrate and exchange
-absolute-intensity profiles with their processing context.
+For measured data, the required normalization and thickness context must be supplied consistently. Input intensity states gate incompatible operations.
 
 ## What it does
 
