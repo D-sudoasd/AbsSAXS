@@ -8,6 +8,7 @@ include codemeta.json
 include .zenodo.json
 include SASAbs.py
 include saxs_mpl_style.py
+include saxs_gui_help.py
 include saxsabs_workbench.py
 include saxsabs_workbench.pyw
 include Start_SAXSAbs_Workbench.bat

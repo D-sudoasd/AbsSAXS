@@ -31,6 +31,7 @@ import concurrent.futures
 import threading
 import uuid
 from types import SimpleNamespace
+from saxs_gui_help import ContextToolTip, apply_help_text, install_context_help
 
 APP_NAME = "SAXSAbs Workbench"
 
@@ -78,20 +79,38 @@ SUPPORTED_LANGUAGES = ("en", "zh")
 I18N = {
     "en": {
         "app_title": f"{APP_NAME} v{APP_VERSION}",
-        "header_title": f"{APP_NAME}  |  Absolute Intensity Calibration",
-        "theme_toggle": "🌓 Theme",
+        "header_title": APP_NAME,
+        "header_subtitle": "Absolute-intensity calibration",
+        "theme_toggle": "Theme",
+        "calibration_load": "Load calibration…",
+        "calibration_empty": "No calibration loaded",
+        "calibration_active": "Active K = {value}",
+        "workflow_unchecked": "Add files and run Preflight before processing.",
+        "workflow_READY": "READY · Preflight passed. Processing is available.",
+        "workflow_CAUTION": "CAUTION · Review the warnings in the report before processing.",
+        "workflow_BLOCKED": "BLOCKED · Review the report and correct the inputs.",
+        "workflow_running": "Processing…",
+        "workflow_completed": "Processing completed. Review the output and report.",
+        "workflow_failed": "Processing failed. Review the report and run Preflight again.",
+        "view_report": "View report",
+        "result_plot": "Calibration plot",
+        "result_report": "Activity report",
+        "plot_empty_title": "Calibration results",
+        "plot_empty_text": "Select input files, then run K calibration.\nMeasured and reference curves appear here.",
+        "show_details": "Show details",
+        "hide_details": "Hide details",
         "theme_unavailable": "unavailable",
         "lang_toggle_to_zh": "中文",
         "lang_toggle_to_en": "English",
-        "tab1": "\U0001f4d0  1. K-Factor Calibration",
-        "tab2": "\U0001f4e6  2. Batch Processing",
-        "tab3": "\U0001f4c8  3. External 1D \u2192 Abs",
-        "tab4": "\u2753  4. Help",
-        "t1_guide_title": "Quick Start",
+        'tab1': '1  Calibration',
+        'tab2': '2  Detector processing',
+        'tab3': '3  External 1D',
+        'tab4': 'Help',
+        't1_guide_title': 'Calibration workflow',
         "t1_guide_text": "① Select standard/background/dark/geometry files\n② Verify auto-loaded Time, I0, T\n③ Set standard thickness (mm)\n④ Run calibration to obtain K\n⑤ Check Std Dev and valid points",
         "t1_files_title": "1. Calibration Files (Required)",
         "t1_phys_title": "2. Physical Parameters",
-        "t1_run_btn": "\u25b6  Run K Calibration",
+        't1_run_btn': 'Run K calibration',
         "t1_hist_btn": "K History",
         "t1_report_title": "Analysis Report",
         "t1_plot_tip": "Plot: dashed=net signal; blue=K-corrected; orange=reference markers",
@@ -110,16 +129,16 @@ I18N = {
         "t2_add_btn": "Add Files",
         "t2_add_folder_btn": "Add Folder",
         "t2_clear_btn": "Clear Queue",
-        "t2_check_btn": "Dry Check",
-        "t2_group_btn": "Detect Groups / 机时分组",
-        "t2_run_btn": "\u25b6  Start Batch Processing",
+        't2_check_btn': 'Preflight',
+        't2_group_btn': 'Detect groups',
+        't2_run_btn': 'Start processing',
         "t3_guide_title": "External 1D Workflow",
         "t3_guide_text": "① Obtain K in Tab1\n② Select pipeline mode (scaled/raw)\n③ Import external 1D files\n④ Select correction formula and X-axis type\n⑤ Dry-check then batch-export absolute intensity",
         "t3_mid_title": "External 1D Queue",
         "t3_add_btn": "Add 1D Files",
         "t3_clear_btn": "Clear Queue",
-        "t3_check_btn": "Dry Check",
-        "t3_run_btn": "\u25b6  Start External 1D Calibration",
+        't3_check_btn': 'Preflight',
+        't3_run_btn': 'Start processing',
         "queue_files": "Queue files",
         "queue_dedup": "deduplicated",
         "out_auto_prefix": "Output directories will be created",
@@ -529,20 +548,38 @@ I18N = {
     },
     "zh": {
         "app_title": f"{APP_NAME} v{APP_VERSION}",
-        "header_title": f"{APP_NAME}｜绝对强度校正",
-        "theme_toggle": "🌓 切换深色/浅色模式",
+        "header_title": APP_NAME,
+        "header_subtitle": "SAXS 绝对强度标定",
+        "theme_toggle": "主题",
+        "calibration_load": "加载标定记录…",
+        "calibration_empty": "尚未加载标定记录",
+        "calibration_active": "当前 K = {value}",
+        "workflow_unchecked": "添加文件并完成预检查后，即可开始处理。",
+        "workflow_READY": "READY · 预检查通过，可以开始处理。",
+        "workflow_CAUTION": "CAUTION · 请先查看报告中的警告。",
+        "workflow_BLOCKED": "BLOCKED · 请查看报告并修正输入。",
+        "workflow_running": "正在处理…",
+        "workflow_completed": "处理完成，请查看输出和报告。",
+        "workflow_failed": "处理失败，请查看报告并重新预检查。",
+        "view_report": "查看报告",
+        "result_plot": "标定曲线",
+        "result_report": "运行报告",
+        "plot_empty_title": "比较标准样与参考曲线",
+        "plot_empty_text": "选择输入文件并运行 K 因子标定。\n测量曲线与参考曲线将在此显示。",
+        "show_details": "展开详情",
+        "hide_details": "收起详情",
         "theme_unavailable": "不可用",
         "lang_toggle_to_zh": "中文",
         "lang_toggle_to_en": "English",
-        "tab1": "\U0001f4d0  1. K 因子标定",
-        "tab2": "\U0001f4e6  2. 批处理",
-        "tab3": "\U0001f4c8  3. 外部 1D \u2192 绝对强度",
-        "tab4": "\u2753  4. 帮助",
-        "t1_guide_title": "快速流程（新手）",
+        'tab1': '1  标定',
+        'tab2': '2  探测器数据处理',
+        'tab3': '3  外部一维曲线',
+        'tab4': '帮助',
+        't1_guide_title': '标定流程',
         "t1_guide_text": "① 选择标准样/本底/暗场/几何文件\n② 核对自动读取的 Time、I0、T\n③ 填写标准样厚度(mm)\n④ 点击运行标定，得到 K 因子\n⑤ 查看报告中的 Std Dev 与点数",
         "t1_files_title": "1. 标定文件（必须）",
         "t1_phys_title": "2. 物理参数（核心输入）",
-        "t1_run_btn": "\u25b6  运行 K 因子标定",
+        't1_run_btn': '运行 K 因子标定',
         "t1_hist_btn": "K 历史",
         "t1_report_title": "分析报告（建议重点看 Std Dev）",
         "t1_plot_tip": "图示说明：虚线=净信号；蓝线=K 校正后；橙色=参考点",
@@ -563,14 +600,14 @@ I18N = {
         "t2_clear_btn": "清空队列",
         "t2_check_btn": "预检查",
         "t2_group_btn": "检测机时分组",
-        "t2_run_btn": "\u25b6  开始批处理",
+        't2_run_btn': '开始处理',
         "t3_guide_title": "外部 1D 绝对强度校正流程",
         "t3_guide_text": "① 先在 Tab1 得到可信 K 因子\n② 选择流程：仅比例缩放 / 原始1D完整校正\n③ 导入外部1D文件（原始模式还需 BG1D/Dark1D 与参数）\n④ 选择校正公式（K/d 或 K）与 X 轴类型\n⑤ 先预检查，再批量输出绝对强度表格",
         "t3_mid_title": "外部 1D 文件队列",
         "t3_add_btn": "添加1D文件",
         "t3_clear_btn": "清空队列",
         "t3_check_btn": "预检查",
-        "t3_run_btn": "\u25b6  开始外部 1D 绝对强度校正",
+        't3_run_btn': '开始处理',
         "queue_files": "队列文件",
         "queue_dedup": "去重后",
         "out_auto_prefix": "输出目录将自动创建",
@@ -1170,8 +1207,26 @@ I18N["zh"].update({
     ),
 })
 
+apply_help_text(I18N)
+I18N["en"].update({
+    "t2_guide_text": "1. Load calibration and sample files → 2. Set thickness and integration\n"
+                     "3. Run Preflight → 4. Process and review the report",
+    "t3_guide_text": "1. Load calibration and relative-intensity profiles → 2. Select K/d or K\n"
+                     "3. Run Preflight → 4. Export absolute intensity and review the report",
+    "help_panel_intro": "Hover over a control to see its help. You can also select it with Tab, "
+                        "then press F1. Press Esc to close the help.",
+})
+I18N["zh"].update({
+    "t2_guide_text": "1. 加载标定记录和样品文件 → 2. 设置厚度与积分方式\n"
+                     "3. 完成预检查 → 4. 处理数据并查看报告",
+    "t3_guide_text": "1. 加载标定记录和相对强度曲线 → 2. 选择 K/d 或 K\n"
+                     "3. 完成预检查 → 4. 导出绝对强度并查看报告",
+    "help_panel_intro": "将鼠标停在按钮或输入栏上即可查看说明；也可按 Tab 选中控件，"
+                        "再按 F1 查看。按 Esc 收起说明。",
+})
+
 try:
-    from saxs_ui_kit import apply_ios_theme, promote_primary_buttons, toggle_theme, ToolTip
+    from saxs_ui_kit import apply_ios_theme, promote_primary_buttons, toggle_theme
 
     def theme_backend_available():
         return True
@@ -1220,83 +1275,7 @@ except Exception:
             app._sync_native_widget_colors()
         return True
 
-    class ToolTip:
-        """Improved cross-platform tooltip with smarter positioning and i18n support."""
-        DEFAULT_DELAY_MS = 420
-
-        def __init__(self, widget, text, delay_ms=None):
-            self.widget = widget
-            self.text = text
-            self.delay_ms = delay_ms if delay_ms is not None else self.DEFAULT_DELAY_MS
-            self._tw = None
-            self._id_after = None
-            widget.bind("<Enter>", self._schedule, add="+")
-            widget.bind("<Leave>", self._hide, add="+")
-            widget.bind("<ButtonPress>", self._hide, add="+")
-
-        def _schedule(self, event=None):
-            self._hide()
-            self._id_after = self.widget.after(self.delay_ms, self._show)
-
-        def _show(self):
-            if not self.text:
-                return
-            try:
-                wx = self.widget.winfo_rootx()
-                wy = self.widget.winfo_rooty()
-                wh = self.widget.winfo_height()
-                tw = tk.Toplevel(self.widget)
-                tw.wm_overrideredirect(True)
-
-                # Create label first to measure size
-                is_dark = (_sv_ttk is not None and _sv_ttk.get_theme() == "dark")
-                bg = "#2d2d2d" if is_dark else "#ffffe7"
-                fg = "#f0f0f0" if is_dark else "#1a1a1a"
-                lbl = tk.Label(tw, text=self.text, justify="left",
-                               background=bg, foreground=fg,
-                               relief="solid", borderwidth=1,
-                               font=("Segoe UI", 9), wraplength=420,
-                               padx=8, pady=5)
-                lbl.pack()
-
-                tw.update_idletasks()
-                tw_w = tw.winfo_reqwidth()
-                tw_h = tw.winfo_reqheight()
-
-                # Smart positioning: prefer below, flip above if near bottom of screen
-                screen_h = self.widget.winfo_screenheight()
-                screen_w = self.widget.winfo_screenwidth()
-
-                x = wx + 12
-                y = wy + wh + 6
-
-                if y + tw_h > screen_h - 8:
-                    y = max(8, wy - tw_h - 4)
-                if x + tw_w > screen_w - 8:
-                    x = max(8, screen_w - tw_w - 8)
-
-                tw.wm_geometry(f"+{int(x)}+{int(y)}")
-                self._tw = tw
-            except Exception:
-                # Never let a tooltip crash the app
-                self._tw = None
-
-        def _hide(self, event=None):
-            if self._id_after:
-                try:
-                    self.widget.after_cancel(self._id_after)
-                except Exception:
-                    pass
-                self._id_after = None
-            if self._tw:
-                try:
-                    self._tw.destroy()
-                except Exception:
-                    pass
-                self._tw = None
-
-        def update_text(self, new_text):
-            self.text = new_text
+ToolTip = ContextToolTip
 
 try:
     from saxs_core import load_session, session_geometry
@@ -2007,13 +1986,22 @@ class SAXSAbsWorkbenchApp:
         self.set_style(initialize_theme=True)
         self._tooltips = []
         self._output_format_combos = []
+        self._workflow_status_vars = {}
+        self._workflow_status_labels = {}
+        self._workflow_display_states = {}
+        self._scroll_frames = []
         
         # Top bar for theme toggle
-        top_bar = ttk.Frame(self.root)
-        top_bar.pack(fill="x", padx=16, pady=(12, 6))
+        top_bar = ttk.Frame(self.root, padding=(16, 12))
+        top_bar.pack(fill="x")
         top_bar.columnconfigure(0, weight=1)
         self.lbl_header_title = ttk.Label(top_bar, text=self.tr("header_title"), style="Title.TLabel")
         self.lbl_header_title.grid(row=0, column=0, sticky="w")
+        self.lbl_header_subtitle = ttk.Label(
+            top_bar, text=self.tr("header_subtitle"), style="Hint.TLabel"
+        )
+        self.lbl_header_subtitle.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self._register_i18n_widget(self.lbl_header_subtitle, "header_subtitle")
 
         self.btn_theme = ttk.Button(top_bar, text=self.tr("theme_toggle"), command=lambda: toggle_theme(self.root))
         self.btn_theme.grid(row=0, column=1, sticky="e", padx=(8, 0))
@@ -2025,6 +2013,15 @@ class SAXSAbsWorkbenchApp:
 
         self.btn_lang = ttk.Button(top_bar, text=self._lang_button_text(), width=10, command=self.toggle_language)
         self.btn_lang.grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self.btn_calibration_load = ttk.Button(
+            top_bar, text=self.tr("calibration_load"), command=self._browse_calibration_record
+        )
+        self.btn_calibration_load.grid(row=0, column=3, sticky="e", padx=(8, 0))
+        self._register_i18n_widget(self.btn_calibration_load, "calibration_load")
+        self._calibration_summary_var = tk.StringVar(value=self.tr("calibration_empty"))
+        ttk.Label(
+            top_bar, textvariable=self._calibration_summary_var, style="Hint.TLabel"
+        ).grid(row=1, column=1, columnspan=3, sticky="e", pady=(2, 0))
 
         # Separator under top bar
         ttk.Separator(self.root, orient="horizontal").pack(fill="x", padx=12, pady=(0, 4))
@@ -2046,6 +2043,7 @@ class SAXSAbsWorkbenchApp:
             "polarization_enabled": tk.BooleanVar(value=False),
             "polarization_factor": tk.DoubleVar(value=0.0),
         }
+        self.global_vars["k_factor"].trace_add("write", self._refresh_calibration_summary)
         self.calibration_context = None
         self.calibration_record_provenance_complete = None
         self.calibration_record_source_files_verified = None
@@ -2062,7 +2060,6 @@ class SAXSAbsWorkbenchApp:
 
         # === 布局 ===
         self.nb = ttk.Notebook(root)
-        self.nb.pack(expand=1, fill="both", padx=8, pady=(0, 8))
 
         self.tab1 = ttk.Frame(self.nb)
         self.tab2 = ttk.Frame(self.nb)
@@ -2082,12 +2079,51 @@ class SAXSAbsWorkbenchApp:
             self.root, textvariable=self._status_var, style="Status.TLabel", anchor="w"
         )
         self._status_bar.pack(fill="x", side="bottom")
+        self.nb.pack(expand=1, fill="both", padx=12, pady=(0, 8))
 
         self.init_tab1_k_calc()
         self.init_tab2_batch()
         self.init_tab3_external_1d()
         self.init_tab_help()
         promote_primary_buttons(self.root)
+        install_context_help(self.root)
+        self._sync_native_widget_colors()
+        self.root.bind_all("<MouseWheel>", self._on_workbench_mousewheel, add="+")
+        self.root.bind_all("<Button-4>", self._on_workbench_mousewheel, add="+")
+        self.root.bind_all("<Button-5>", self._on_workbench_mousewheel, add="+")
+        self.root.bind_all("<FocusIn>", self._on_workbench_focus, add="+")
+
+    def _refresh_calibration_summary(self, *_args):
+        target = getattr(self, "_calibration_summary_var", None)
+        if target is None:
+            return
+        raw = self.global_vars["k_factor"].get()
+        try:
+            value = float(raw)
+            text = self.tr("calibration_active").format(value=f"{value:.6g}")
+            if not math.isfinite(value) or value <= 0:
+                text = self.tr("calibration_empty")
+        except (TypeError, ValueError):
+            text = self.tr("calibration_empty")
+        target.set(text)
+
+    def _browse_calibration_record(self):
+        path = filedialog.askopenfilename(
+            parent=self.root, title=self.tr("calibration_load"),
+            filetypes=[("Calibration record", "*.json")],
+        )
+        if not path:
+            return
+        try:
+            self.load_calibration_record(path)
+            self.report(f"Loaded calibration record: {path}")
+        except Exception as exc:
+            self.show_error("msg_calib_error_title", str(exc))
+            self.report(f"[ERROR] {exc}")
+
+    def _show_activity_report(self):
+        self.nb.select(self.tab1)
+        self.result_nb.select(self.report_panel)
 
     def tr(self, key):
         lang_pack = I18N.get(self.language, I18N["en"])
@@ -2114,7 +2150,10 @@ class SAXSAbsWorkbenchApp:
         if hasattr(self, "lbl_header_title"):
             self.lbl_header_title.configure(text=self.tr("header_title"))
         if hasattr(self, "btn_theme"):
-            self.btn_theme.configure(text=self.tr("theme_toggle"))
+            theme_text = self.tr("theme_toggle")
+            if not theme_backend_available():
+                theme_text = f"{theme_text} ({self.tr('theme_unavailable')})"
+            self.btn_theme.configure(text=theme_text)
         if hasattr(self, "btn_lang"):
             self.btn_lang.configure(text=self._lang_button_text())
         if hasattr(self, "nb"):
@@ -2175,6 +2214,15 @@ class SAXSAbsWorkbenchApp:
             except Exception:
                 pass
         self._refresh_workbench_job_status_text()
+        self._refresh_calibration_summary()
+        for tab, state in getattr(self, "_workflow_display_states", {}).copy().items():
+            self._update_workflow_display(tab, state)
+        for button, shown in getattr(self, "_disclosure_widgets", []):
+            button.configure(text=self.tr("hide_details" if shown[0] else "show_details"))
+        if hasattr(self, "result_nb"):
+            self.result_nb.tab(self.plot_panel, text=self.tr("result_plot"))
+            self.result_nb.tab(self.report_panel, text=self.tr("result_report"))
+            self._refresh_empty_plot_text()
         self.refresh_help_text()
         # Language changes only redraw labels and derived display text.  They
         # do not alter the scientific configuration that the last Dry Check
@@ -2802,125 +2850,76 @@ class SAXSAbsWorkbenchApp:
     def confirm_action(self, message_key):
         return messagebox.askyesno(self.tr("confirm_clear_title"), self.tr(message_key))
 
+
     def set_style(self, *, initialize_theme=False):
-        # Apply the light default only during initialization.  Re-applying it
-        # during a user toggle would immediately erase the selected dark theme.
         if initialize_theme:
             apply_ios_theme(self.root)
-        style = ttk.Style()
-        # Only fall back to clam if sv_ttk is not active
+        style = ttk.Style(self.root)
         current = style.theme_use()
-        if "sun-valley" not in current and "sv" not in current:
-            try:
-                style.theme_use("clam")
-            except Exception:
-                pass
-
-        # --- Unified typography hierarchy ---
-        _FONT_FAMILY = "Segoe UI"
-        # === Premium Color System (Phase 2 High-End Aesthetics) ===
-        try:
-            import sv_ttk as _sv
-            _is_dark = _sv.get_theme() == "dark"
-        except Exception:
-            _is_dark = False
-
-        if _is_dark:
-            # Dark mode — calm, sophisticated, easy on the eyes for long lab sessions
-            _title_fg      = "#f1f5f9"
-            _accent_fg     = "#3b82f6"        # Strong but not harsh blue
-            _accent_soft   = "#60a5fa"        # Softer accent for secondary highlights
-            _hint_fg       = "#94a3b8"
-            _surface_bg    = "#1e293b"        # Slightly elevated surface for cards
-            _text_primary  = "#e2e8f0"
-            _text_secondary = "#cbd5e1"
+        themed = "sun-valley" in current or "sv" in current
+        if not themed:
+            style.theme_use("clam")
+        dark = "dark" in style.theme_use()
+        self._ui_colors = (
+            {"background": "#1c1c1c", "surface": "#252b35", "text": "#edf1f7",
+             "muted": "#aeb9ca", "border": "#465164", "accent": "#82b7ff",
+             "selection": "#284e7a", "success": "#83d6aa", "warning": "#f4c477",
+             "error": "#ff9f9f"}
+            if dark else
+            {"background": "#fafafa", "surface": "#ffffff", "text": "#1d2a3c",
+             "muted": "#526176", "border": "#d5dce6", "accent": "#215fa8",
+             "selection": "#215fa8", "success": "#217148", "warning": "#8e5a0b",
+             "error": "#b42332"}
+        )
+        colors = self._ui_colors
+        family = self._get_ui_font()[0]
+        for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
+            tkfont.nametofont(name, root=self.root).configure(family=family, size=9)
+        self.root.configure(background=colors["background"])
+        style.configure("TFrame", background=colors["background"])
+        style.configure("TLabel", background=colors["background"], foreground=colors["text"])
+        style.configure("TNotebook", background=colors["background"], tabmargins=(0, 6, 0, 0))
+        style.configure("TNotebook.Tab", font=(family, 10), padding=(16, 9))
+        style.configure("TEntry", padding=(6, 4))
+        style.configure("TCombobox", padding=(6, 4))
+        style.configure("TButton", font=(family, 9), padding=(10, 6))
+        style.configure("Title.TLabel", font=(family, 15, "bold"))
+        style.configure("Bold.TLabel", font=(family, 9, "bold"))
+        style.configure("Hint.TLabel", font=(family, 9), foreground=colors["muted"])
+        style.configure("Important.TLabel", font=(family, 13, "bold"), foreground=colors["accent"])
+        style.configure("Group.TLabelframe", padding=(12, 10), background=colors["background"],
+                        bordercolor=colors["border"], borderwidth=1, relief="solid")
+        style.configure("Group.TLabelframe.Label", font=(family, 10, "bold"),
+                        background=colors["background"], foreground=colors["text"])
+        style.configure("Status.TLabel", font=(family, 9), foreground=colors["muted"],
+                        padding=(12, 5))
+        style.configure("Workflow.TLabel", font=(family, 9), foreground=colors["muted"])
+        for label_style in ("Title.TLabel", "Bold.TLabel", "Hint.TLabel", "Important.TLabel",
+                            "Status.TLabel", "Workflow.TLabel"):
+            style.configure(label_style, background=colors["background"])
+        style.configure("Secondary.TButton", padding=(10, 6))
+        style.configure("Danger.TButton", foreground=colors["error"])
+        if themed:
+            # Use the existing theme's accent layout, including hover/pressed/disabled states.
+            style.layout("PrimaryAction.TButton", style.layout("Accent.TButton"))
+            for option in ("background", "foreground"):
+                mapping = style.map("Accent.TButton", option)
+                if mapping:
+                    style.map("PrimaryAction.TButton", **{option: mapping})
         else:
-            # Light mode — clean and professional
-            _title_fg      = "#0f172a"
-            _accent_fg     = "#2563eb"
-            _accent_soft   = "#3b82f6"
-            _hint_fg       = "#475569"
-            _surface_bg    = "#f8fafc"
-            _text_primary  = "#1e293b"
-            _text_secondary = "#334155"
-
-        style.configure("Title.TLabel",
-                        font=(_FONT_FAMILY, 13, "bold"),
-                        foreground=_title_fg)
-        style.configure("Bold.TLabel",
-                        font=(_FONT_FAMILY, 9, "bold"))
-        style.configure("Group.TLabelframe.Label",
-                        font=(_FONT_FAMILY, 9, "bold"),
-                        foreground=_accent_fg)
-        style.configure("Hint.TLabel",
-                        font=(_FONT_FAMILY, 8),
-                        foreground=_hint_fg)
-        # Refined primary text for better readability
-        style.configure("TLabel",
-                        foreground=_text_primary)
-        style.configure("TEntry",
-                        padding=(5, 4))
-        style.configure("TCombobox",
-                        padding=(5, 4))
-        style.configure("TButton",
-                        padding=(10, 6))
-
-        # Accent button font (sv_ttk supplies colours automatically)
-        style.configure("Accent.TButton",
-                        font=(_FONT_FAMILY, 10, "bold"))
-        style.configure("Secondary.TButton",
-                        font=(_FONT_FAMILY, 9),
-                        padding=(10, 6))
-        style.configure("Danger.TButton",
-                        font=(_FONT_FAMILY, 9, "bold"),
-                        foreground="#b91c1c")
-        # Tab label – slightly larger, padded
-        style.configure("TNotebook.Tab",
-                        font=(_FONT_FAMILY, 10),
-                        padding=(14, 6))
-        # LabelFrame internal padding – generous breathing room (was 10,8)
-        style.configure("Group.TLabelframe",
-                        padding=(12, 10))
-
-        # Premium card-like elevation for sections (especially nice in dark mode)
-        style.configure("Group.TLabelframe",
-                        relief="solid",
-                        borderwidth=1,
-                        bordercolor="#334155" if _is_dark else "#e2e8f0")
-
-        # Status bar style
-        style.configure("Status.TLabel",
-                        font=(_FONT_FAMILY, 8),
-                        foreground=_hint_fg,
-                        padding=(8, 3))
-
-        # === Strong visual hierarchy styles (Phase 2 premium) ===
-        # Important values (especially K-factor) – must stand out elegantly
-        style.configure("Important.TLabel",
-                        font=(_FONT_FAMILY, 12, "bold"),
-                        foreground=_accent_fg)
-
-        # Primary action buttons – premium, confident, satisfying to use (Phase 2 high-end)
-        style.configure("PrimaryAction.TButton",
-                        font=(_FONT_FAMILY, 11, "bold"),
-                        padding=(14, 9))
-
-        # Slightly stronger Group title for dark mode separation
-        style.configure("Group.TLabelframe.Label",
-                        font=(_FONT_FAMILY, 9, "bold"),
-                        foreground=_accent_fg)
-
-        # Premium subtle card surface (for important sections)
-        style.configure("Card.TLabelframe",
-                        background=_surface_bg,
-                        padding=(14, 12))
-
-        # Store references for dark-mode syncing (initialise only once)
+            for button_style in ("Accent.TButton", "PrimaryAction.TButton"):
+                style.configure(button_style, background="#215fa8", foreground="white")
+                style.map(button_style, background=[("disabled", colors["border"]),
+                                                    ("pressed", "#174779"),
+                                                    ("active", "#2b71c2")],
+                          foreground=[("disabled", colors["muted"])])
+        style.configure("Accent.TButton", font=(family, 9, "bold"))
+        style.configure("PrimaryAction.TButton", font=(family, 10, "bold"), padding=(14, 8))
         if not hasattr(self, "_native_widgets"):
-            self._native_widgets: list = []
+            self._native_widgets = []
         if not hasattr(self, "_scroll_canvases"):
-            self._scroll_canvases: list = []
-        self.root._app_ref = self  # allow toggle_theme callback to reach us
+            self._scroll_canvases = []
+        self.root._app_ref = self
 
     def _report_theme_unavailable(self):
         message = "Theme control unavailable: sv_ttk is not installed."
@@ -2940,121 +2939,105 @@ class SAXSAbsWorkbenchApp:
         self._native_widgets.append(widget)
         self._apply_native_colors(widget)
 
+
     def _apply_native_colors(self, widget):
-        """Set bg/fg on a single native tk widget according to current theme."""
-        try:
-            import sv_ttk as _sv
-            is_dark = _sv.get_theme() == "dark"
-        except Exception:
-            is_dark = False
-        if is_dark:
-            bg, fg, sel_bg, sel_fg = "#2b2b2b", "#e0e0e0", "#264f78", "#ffffff"
-            ins = "#e0e0e0"
-        else:
-            bg, fg, sel_bg, sel_fg = "#ffffff", "#1a1a1a", "#0078d4", "#ffffff"
-            ins = "#1a1a1a"
-        try:
-            widget.configure(bg=bg, fg=fg, selectbackground=sel_bg, selectforeground=sel_fg)
-            if isinstance(widget, tk.Text):
-                widget.configure(insertbackground=ins)
-        except Exception:
-            pass
+        colors = self._ui_colors
+        widget.configure(bg=colors["surface"], fg=colors["text"],
+                         selectbackground=colors["selection"], selectforeground="#ffffff",
+                         borderwidth=0, highlightthickness=1,
+                         highlightbackground=colors["border"],
+                         highlightcolor=colors["accent"])
+        if isinstance(widget, tk.Text):
+            widget.configure(insertbackground=colors["text"])
+        if isinstance(widget, tk.Listbox):
+            widget.configure(font=self._get_ui_font(), activestyle="none", exportselection=False)
+
 
     def _get_ui_font(self, size=9, weight="normal", prefer_chinese=False):
-        """
-        Return a font tuple that works well for both English and Chinese.
-        This is the main fix for 乱码 in Text widgets and reports.
-        """
-        import platform
-        system = platform.system()
+        # Tk silently substitutes unknown families; creating a Font is not an availability test.
+        available = set(tkfont.families(root=self.root))
+        candidates = (
+            ["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI",
+             "Noto Sans", "DejaVu Sans", "Helvetica"]
+            if prefer_chinese or sys.platform == "win32" else
+            ["Noto Sans CJK SC", "Noto Sans", "DejaVu Sans", "Helvetica", "Arial"]
+        )
+        family = next((name for name in candidates if name in available),
+                      tkfont.nametofont("TkDefaultFont", root=self.root).actual("family"))
+        return family, size, weight
 
-        if prefer_chinese or system == "Windows":
-            # Best Chinese support on Windows
-            candidates = [
-                "Microsoft YaHei UI",
-                "Microsoft YaHei",
-                "SimHei",
-                "SimSun",
-                "Segoe UI",
-                "Consolas"
-            ]
-        else:
-            candidates = ["Segoe UI", "Helvetica", "Consolas"]
-
-        for font_name in candidates:
-            try:
-                # Test if the font is available by creating a temporary font
-                tkfont.Font(family=font_name, size=size)
-                # If we reach here without error, the font is usable
-                return (font_name, size, weight)
-            except Exception:
-                continue
-
-        # Final fallback
-        return ("Consolas", size, weight)
 
     def _sync_native_widget_colors(self):
-        """Called after theme toggle to update all native tk widgets + mpl."""
-        # Re-apply adaptive ttk styles (Title, Hint, Group, Status, Tab)
         self.set_style()
-
-        alive = []
-        for w in self._native_widgets:
-            try:
-                w.winfo_exists()  # raises TclError if destroyed
-                self._apply_native_colors(w)
-                alive.append(w)
-            except Exception:
-                pass
-        self._native_widgets = alive
-
-        # Update scroll-canvas backgrounds
-        try:
-            import sv_ttk as _sv
-            is_dark = _sv.get_theme() == "dark"
-        except Exception:
-            is_dark = False
-        canvas_bg = "#0f172a" if is_dark else "#f8fafc"  # Phase 2 premium dark surface
-        alive_c = []
-        for c in self._scroll_canvases:
-            try:
-                c.winfo_exists()
-                c.configure(bg=canvas_bg)
-                alive_c.append(c)
-            except Exception:
-                pass
-        self._scroll_canvases = alive_c
-
-        # Update matplotlib figure backgrounds if present
-        fig_bg = "#2b2b2b" if is_dark else "#fafafa"
-        ax_bg = "#1e1e1e" if is_dark else "#ffffff"
-        txt_c = "#e0e0e0" if is_dark else "#1a1a1a"
-        import matplotlib as mpl
-        mpl.rcParams.update({
-            "figure.facecolor": fig_bg,
-            "axes.facecolor": ax_bg,
-            "text.color": txt_c,
-            "axes.labelcolor": txt_c,
-            "xtick.color": txt_c,
-            "ytick.color": txt_c,
-        })
+        colors = self._ui_colors
+        for option, color in (("background", colors["background"]),
+                              ("foreground", colors["text"]),
+                              ("activeBackground", colors["selection"]),
+                              ("activeForeground", "#ffffff"),
+                              ("selectColor", colors["background"])):
+            self.root.option_add(f"*{option}", color)
+        # Matplotlib's Tk toolbar uses native buttons and raster icons rather than ttk.
+        pending = [self.root]
+        while pending:
+            widget = pending.pop()
+            pending.extend(widget.winfo_children())
+            if not isinstance(widget, NavigationToolbar2Tk):
+                continue
+            widget.configure(background=colors["background"])
+            for child in widget.winfo_children():
+                options = child.keys()
+                config = {key: value for key, value in (
+                    ("background", colors["background"]), ("foreground", colors["text"]),
+                    ("activebackground", colors["selection"]), ("activeforeground", "#ffffff"),
+                    ("disabledforeground", colors["muted"]), ("selectcolor", colors["background"]),
+                ) if key in options}
+                child.configure(**config)
+                if getattr(child, "_image_file", None) and hasattr(widget, "_set_image_for_button"):
+                    widget._set_image_for_button(child)
+        self._native_widgets = [w for w in self._native_widgets if w.winfo_exists()]
+        for widget in self._native_widgets:
+            self._apply_native_colors(widget)
+            if isinstance(widget, tk.Text):
+                for tag, key in (("error", "error"), ("success", "success"),
+                                 ("warning", "warning"), ("kfactor", "accent"),
+                                 ("preflight_READY", "success"),
+                                 ("preflight_CAUTION", "warning"),
+                                 ("preflight_BLOCKED", "error")):
+                    widget.tag_configure(tag, foreground=colors[key])
+        self._scroll_canvases = [c for c in self._scroll_canvases if c.winfo_exists()]
+        for canvas in self._scroll_canvases:
+            canvas.configure(bg=colors["background"])
+        # Existing plot artists need their own colors changed; rcParams affect only new artists.
+        matplotlib.rcParams.update({"figure.facecolor": colors["surface"],
+                                    "axes.facecolor": colors["surface"],
+                                    "text.color": colors["text"],
+                                    "axes.labelcolor": colors["text"],
+                                    "xtick.color": colors["muted"],
+                                    "ytick.color": colors["muted"]})
         for attr in ("fig1", "fig", "fig_preview"):
-            fig = getattr(self, attr, None)
-            if fig is not None:
-                fig.set_facecolor(fig_bg)
-                for ax in fig.get_axes():
-                    ax.set_facecolor(ax_bg)
-                fig.canvas.draw_idle()
+            figure = getattr(self, attr, None)
+            if figure is None:
+                continue
+            figure.set_facecolor(colors["surface"])
+            for axes in figure.get_axes():
+                axes.set_facecolor(colors["surface"])
+                axes.tick_params(colors=colors["muted"])
+                for spine in axes.spines.values():
+                    spine.set_color(colors["border"])
+                for text in [axes.title, axes.xaxis.label, axes.yaxis.label, *axes.texts]:
+                    text.set_color(colors["text"])
+                legend = axes.get_legend()
+                if legend is not None:
+                    for text in legend.get_texts():
+                        text.set_color(colors["text"])
+            figure.canvas.draw_idle()
+        for tab, state in getattr(self, "_workflow_display_states", {}).copy().items():
+            self._update_workflow_display(tab, state)
 
     def _make_scrollable_frame(self, parent):
         """Wrap *parent* with a vertical-scrollable Canvas; return inner Frame."""
-        # Choose canvas bg matching theme (Phase 2 premium dark mode)
-        try:
-            import sv_ttk as _sv
-            _bg = "#0f172a" if _sv.get_theme() == "dark" else "#f8fafc"  # richer dark surface
-        except Exception:
-            _bg = "#fafafa"
-        canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0, bg=_bg)
+        canvas = tk.Canvas(parent, highlightthickness=0, borderwidth=0,
+                           bg=self._ui_colors["background"], yscrollincrement=24)
         vsb = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
         inner = ttk.Frame(canvas)
         inner.bind(
@@ -3070,14 +3053,158 @@ class SAXSAbsWorkbenchApp:
         vsb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
 
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        canvas.bind("<Enter>", lambda _: canvas.bind_all("<MouseWheel>", _on_mousewheel))
-        canvas.bind("<Leave>", lambda _: canvas.unbind_all("<MouseWheel>"))
-        # Track for dark-mode sync
+        # Route wheel/focus events by ancestry; avoid replacing application-wide bindings
+        # every time the pointer crosses a child control.
         self._scroll_canvases.append(canvas)
+        self._scroll_frames.append((canvas, inner))
         return inner
+
+    def _scroll_owner(self, widget):
+        while widget is not None:
+            for canvas, inner in self._scroll_frames:
+                if widget is inner or widget is canvas:
+                    return canvas, inner
+            widget = getattr(widget, "master", None)
+        return None
+
+    def _on_workbench_mousewheel(self, event):
+        # Native scrollable fields and comboboxes retain their own wheel behavior.
+        # Tcl-created combobox popdowns arrive as path strings rather than tk.Misc objects.
+        if not isinstance(event.widget, tk.Misc):
+            return None
+        if event.widget.winfo_class() in {"Text", "Listbox", "TCombobox", "Treeview"}:
+            return None
+        owner = self._scroll_owner(event.widget)
+        if owner is None:
+            return None
+        canvas, inner = owner
+        if not canvas.winfo_ismapped() or inner.winfo_height() <= canvas.winfo_height():
+            return None
+        delta = getattr(event, "delta", 0)
+        number = getattr(event, "num", None)
+        units = -1 if number == 4 else 1 if number == 5 else 0
+        if delta:
+            units = -max(1, abs(int(delta / 120))) if delta > 0 else max(1, abs(int(delta / 120)))
+        if units:
+            canvas.yview_scroll(units, "units")
+            return "break"
+        return None
+
+    def _on_workbench_focus(self, event):
+        owner = self._scroll_owner(event.widget)
+        if owner is None:
+            return
+        canvas, inner = owner
+        if not canvas.winfo_ismapped():
+            return
+        top = event.widget.winfo_rooty() - canvas.winfo_rooty()
+        bottom = top + event.widget.winfo_height()
+        offset = min(top - 12, 0) if top < 0 else max(bottom - canvas.winfo_height() + 12, 0)
+        if offset and inner.winfo_height() > canvas.winfo_height():
+            canvas.yview_moveto(canvas.yview()[0] + offset / inner.winfo_height())
+
+    def _wrap_label(self, label):
+        label.bind("<Configure>",
+                   lambda event: label.configure(wraplength=max(80, event.width)), add="+")
+
+    def _responsive_cards(self, container, placements):
+        """Preserve card order while switching paired settings to one column."""
+        last = [None]
+
+        def reflow(event):
+            narrow = event.width < 1060
+            if narrow == last[0]:
+                return
+            last[0] = narrow
+            container.columnconfigure(0, weight=1, uniform="cards" if not narrow else "")
+            container.columnconfigure(1, weight=0 if narrow else 1,
+                                      uniform="" if narrow else "cards")
+            for index, (card, row, column, span) in enumerate(placements):
+                card.grid_configure(row=index if narrow else row,
+                                    column=0 if narrow else column,
+                                    columnspan=1 if narrow else span)
+
+        container.bind("<Configure>", reflow, add="+")
+
+    def _create_workflow_dock(self, parent, tab, check_command, run_command):
+        dock = ttk.Frame(parent, padding=(16, 10))
+        dock.pack(side="bottom", fill="x")
+        dock.columnconfigure(0, weight=1)
+        status = tk.StringVar(value=self.tr("workflow_unchecked"))
+        label = ttk.Label(dock, textvariable=status, style="Workflow.TLabel", justify="left")
+        label.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        self._wrap_label(label)
+        self._workflow_status_vars[tab] = status
+        self._workflow_status_labels[tab] = label
+        self._workflow_display_states[tab] = "unchecked"
+        report = ttk.Button(dock, text=self.tr("view_report"), command=self._show_activity_report)
+        report.grid(row=0, column=1, padx=(0, 8))
+        self._register_i18n_widget(report, "view_report")
+        check = ttk.Button(dock, text=self.tr(f"{tab}_check_btn"), command=check_command)
+        check.grid(row=0, column=2, padx=(0, 8))
+        self._register_i18n_widget(check, f"{tab}_check_btn")
+        self.add_tooltip(check, f"tip_{tab}_check")
+        run = ttk.Button(dock, text=self.tr(f"{tab}_run_btn"), command=run_command,
+                         style="PrimaryAction.TButton", state="disabled")
+        run.grid(row=0, column=3)
+        self._register_i18n_widget(run, f"{tab}_run_btn")
+        self.add_tooltip(run, f"tip_{tab}_run")
+        setattr(self, f"{tab}_run_button", run)
+        progress = ttk.Progressbar(dock, mode="determinate")
+        progress.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        setattr(self, "prog_bar" if tab == "t2" else "t3_prog_bar", progress)
+
+    def _make_queue_listbox(self, parent, height):
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True, padx=5, pady=5)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        vertical = ttk.Scrollbar(frame, orient="vertical")
+        horizontal = ttk.Scrollbar(frame, orient="horizontal")
+        queue = tk.Listbox(frame, height=height, xscrollcommand=horizontal.set,
+                           yscrollcommand=vertical.set)
+        queue.grid(row=0, column=0, sticky="nsew")
+        vertical.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
+        vertical.configure(command=queue.yview)
+        horizontal.configure(command=queue.xview)
+        self._register_native_widget(queue)
+        return queue
+
+    def _update_workflow_display(self, tab, state):
+        variable = getattr(self, "_workflow_status_vars", {}).get(tab)
+        if variable is None:
+            return
+        self._workflow_display_states[tab] = state
+        variable.set(self.tr(f"workflow_{state}"))
+        color = {"READY": "success", "CAUTION": "warning", "BLOCKED": "error",
+                 "completed": "success", "failed": "error", "running": "accent"}.get(state, "muted")
+        self._workflow_status_labels[tab].configure(foreground=self._ui_colors[color])
+
+    def _collapse_section(self, section, *, closed=True):
+        """Keep an optional or unavailable section discoverable without showing every field."""
+        children = [(child, child.pack_info()) for child in section.winfo_children()
+                    if child.winfo_manager() == "pack"]
+        button = ttk.Button(section, style="Secondary.TButton")
+        button.pack(anchor="w", before=children[0][0] if children else None)
+        shown = [True]
+
+        def toggle():
+            shown[0] = not shown[0]
+            for child, options in children:
+                if shown[0]:
+                    child.pack(**options)
+                else:
+                    child.pack_forget()
+            button.configure(text=self.tr("hide_details" if shown[0] else "show_details"))
+
+        button.configure(command=toggle, text=self.tr("hide_details"))
+        if closed:
+            toggle()
+        if not hasattr(self, "_disclosure_widgets"):
+            self._disclosure_widgets = []
+        self._disclosure_widgets.append((button, shown))
+        return button
 
     def add_tooltip(self, widget, text_or_key):
         if widget is None or not text_or_key:
@@ -3099,6 +3226,7 @@ class SAXSAbsWorkbenchApp:
         resolved = self.tr(text_or_key) if is_key else text_or_key
         lbl = ttk.Label(parent, text=f"{self.tr('hint_prefix')}: {resolved}", style="Hint.TLabel", justify="left", wraplength=wraplength)
         lbl.pack(fill="x", padx=6, pady=(3, 4))  # raised from 3/(1,3) for breathing room
+        self._wrap_label(lbl)
         if is_key:
             if not hasattr(self, "_i18n_hints"):
                 self._i18n_hints = []
@@ -3128,12 +3256,13 @@ class SAXSAbsWorkbenchApp:
     def _add_figure_export_bar(self, parent, fig_getter, default_name):
         bar = ttk.Frame(parent)
         bar.pack(fill="x", pady=(0, 4))
+        bar.columnconfigure(0, weight=1)
 
         preset_var = tk.StringVar(value=saxs_mpl_style.PRESET_LABELS["publication"])
         fmt_var = tk.StringVar(value="png")
 
         lbl_preset = ttk.Label(bar, text=self.tr("plot_preset_label"))
-        lbl_preset.pack(side="left")
+        lbl_preset.grid(row=0, column=0, sticky="w", pady=(0, 4))
         self._register_i18n_widget(lbl_preset, "plot_preset_label")
 
         preset_combo = ttk.Combobox(
@@ -3141,12 +3270,12 @@ class SAXSAbsWorkbenchApp:
             textvariable=preset_var,
             values=self._plot_preset_labels(),
             state="readonly",
-            width=22,
+            width=15,
         )
-        preset_combo.pack(side="left", padx=(4, 10))
+        preset_combo.grid(row=1, column=0, sticky="ew", padx=(0, 8))
 
         lbl_fmt = ttk.Label(bar, text=self.tr("plot_format_label"))
-        lbl_fmt.pack(side="left")
+        lbl_fmt.grid(row=0, column=1, sticky="w", pady=(0, 4))
         self._register_i18n_widget(lbl_fmt, "plot_format_label")
 
         fmt_combo = ttk.Combobox(
@@ -3156,7 +3285,7 @@ class SAXSAbsWorkbenchApp:
             state="readonly",
             width=6,
         )
-        fmt_combo.pack(side="left", padx=(4, 10))
+        fmt_combo.grid(row=1, column=1, padx=(0, 8))
 
         def do_export():
             fig = fig_getter()
@@ -3170,7 +3299,7 @@ class SAXSAbsWorkbenchApp:
             command=do_export,
             style="Accent.TButton",
         )
-        btn_export.pack(side="right")
+        btn_export.grid(row=1, column=2)
         self._register_i18n_widget(btn_export, "plot_export_btn")
 
         self.add_tooltip(preset_combo, "tip_plot_preset")
@@ -4450,10 +4579,19 @@ class SAXSAbsWorkbenchApp:
     # =========================================================================
     def init_tab1_k_calc(self):
         p = self.tab1
-        left_panel_holder = ttk.Frame(p, width=460)
-        left_panel_holder.pack(side="left", fill="y", padx=8, pady=8)
-        left_panel_holder.pack_propagate(False)
+        self._calibration_split = ttk.Panedwindow(p, orient="horizontal")
+        self._calibration_split.pack(fill="both", expand=True, padx=8, pady=8)
+        left_panel_holder = ttk.Frame(self._calibration_split, width=440)
+        self._calibration_split.add(left_panel_holder, weight=0)
         left_panel = self._make_scrollable_frame(left_panel_holder)
+        right_panel = ttk.Frame(self._calibration_split)
+        self._calibration_split.add(right_panel, weight=1)
+        self.result_nb = ttk.Notebook(right_panel)
+        self.result_nb.pack(fill="both", expand=True, padx=(8, 0))
+        self.plot_panel = ttk.Frame(self.result_nb, padding=10)
+        self.report_panel = ttk.Frame(self.result_nb, padding=10)
+        self.result_nb.add(self.plot_panel, text=self.tr("result_plot"))
+        self.result_nb.add(self.report_panel, text=self.tr("result_report"))
 
         # 流程提示
         f_guide = ttk.LabelFrame(left_panel, text=self.tr("t1_guide_title"), style="Group.TLabelframe")
@@ -4463,6 +4601,7 @@ class SAXSAbsWorkbenchApp:
         lbl_guide = ttk.Label(f_guide, text=guide_text, justify="left", style="Hint.TLabel")
         self._register_i18n_widget(lbl_guide, "t1_guide_text")
         lbl_guide.pack(fill="x", padx=4, pady=3)
+        self._wrap_label(lbl_guide)
         self.add_tooltip(lbl_guide, "tip_t1_guide")
 
         # 1. 文件区
@@ -4526,7 +4665,7 @@ class SAXSAbsWorkbenchApp:
 
         row_bg = self.add_file_row(f_files, "lbl_t1_bg_file", self.t1_files["bg"], "*.tif *.tiff *.edf *.cbf", self.on_load_bg_t1)
         self.add_tooltip(row_bg["entry"], "tip_t1_bg_entry")
-        btn_bg_multi = ttk.Button(row_bg["frame"], text="+", width=3, command=self.select_multi_bg_t1)
+        btn_bg_multi = ttk.Button(row_bg["input_row"], text="+", width=3, command=self.select_multi_bg_t1)
         btn_bg_multi.pack(side="left", padx=(2, 0))
         self.add_tooltip(btn_bg_multi, "tip_t1_bg_multi")
 
@@ -4647,11 +4786,11 @@ class SAXSAbsWorkbenchApp:
         self.add_tooltip(e_pol_t1, "tip_t2_polarization")
 
         # 3. 操作按钮
-        btn_row = ttk.Frame(left_panel)
-        btn_row.pack(fill="x", pady=10)
+        btn_row = ttk.Frame(left_panel_holder, padding=(4, 10))
+        btn_row.pack(side="bottom", fill="x", before=left_panel_holder.winfo_children()[0])
         btn_cal = ttk.Button(btn_row, text=self.tr("t1_run_btn"), command=self.run_calibration, style="PrimaryAction.TButton")
         self._register_i18n_widget(btn_cal, "t1_run_btn")
-        btn_cal.pack(side="left", fill="x", expand=True, ipady=7)  # stronger visual weight for the most important action on the tab
+        btn_cal.pack(side="left", fill="x", expand=True)
         btn_hist = ttk.Button(btn_row, text=self.tr("t1_hist_btn"), command=self.open_k_history)
         self._register_i18n_widget(btn_hist, "t1_hist_btn")
         btn_hist.pack(side="left", padx=(6, 0))
@@ -4659,12 +4798,17 @@ class SAXSAbsWorkbenchApp:
         self.add_tooltip(btn_hist, "tip_t1_history")
 
         # 4. 报告
-        f_rep = ttk.LabelFrame(left_panel, text=self.tr("t1_report_title"), style="Group.TLabelframe")
+        f_rep = ttk.LabelFrame(self.report_panel, text=self.tr("t1_report_title"), style="Group.TLabelframe")
         self._register_i18n_widget(f_rep, "t1_report_title")
         f_rep.pack(fill="both", expand=True, pady=5)
         report_font = self._get_ui_font(9)
-        self.txt_report = tk.Text(f_rep, font=report_font, height=15, width=40)
-        self.txt_report.pack(fill="both", expand=True)
+        report_scroll = ttk.Scrollbar(f_rep, orient="vertical")
+        report_scroll.pack(side="right", fill="y")
+        self.txt_report = tk.Text(f_rep, font=report_font, height=15, width=30,
+                                  wrap="word", padx=10, pady=10,
+                                  yscrollcommand=report_scroll.set, state="disabled")
+        self.txt_report.pack(side="left", fill="both", expand=True)
+        report_scroll.configure(command=self.txt_report.yview)
         # Configure semantic highlight tags for report text
         self.txt_report.tag_configure("error", foreground="#dc2626")
         self.txt_report.tag_configure("success", foreground="#16a34a", font=("Consolas", 9, "bold"))
@@ -4679,28 +4823,53 @@ class SAXSAbsWorkbenchApp:
         self.add_tooltip(self.txt_report, "tip_t1_report")
 
         # --- 右侧图形 ---
-        right_panel = ttk.Frame(p)
-        right_panel.pack(side="right", fill="both", expand=True, padx=5, pady=5)
+        right_panel = self.plot_panel
         lbl_plot_tip = ttk.Label(
             right_panel,
             text=self.tr("t1_plot_tip"),
             style="Hint.TLabel",
         )
         self._register_i18n_widget(lbl_plot_tip, "t1_plot_tip")
-        lbl_plot_tip.pack(anchor="w", pady=(0, 2))
+        lbl_plot_tip.pack(fill="x", pady=(0, 8))
+        self._wrap_label(lbl_plot_tip)
         self.fig1 = self._new_figure("raw_inspection")
         self.ax1 = self.fig1.add_subplot(111)
-        self._add_figure_export_bar(right_panel, lambda: self.fig1, "saxsabs_calibration")
+        from matplotlib import font_manager
+        plot_families = {font.name for font in font_manager.fontManager.ttflist}
+        plot_font = next((name for name in ("Microsoft YaHei", "Noto Sans CJK SC", "SimHei")
+                          if name in plot_families), "DejaVu Sans")
+        self._empty_plot_title = self.ax1.text(
+            0.5, 0.75, self.tr("plot_empty_title"), transform=self.ax1.transAxes,
+            ha="center", va="center", fontsize=10, fontweight="bold", fontfamily=plot_font,
+        )
+        self._empty_plot_body = self.ax1.text(
+            0.5, 0.32, self.tr("plot_empty_text"), transform=self.ax1.transAxes,
+            ha="center", va="center", fontsize=9, linespacing=1.6, fontfamily=plot_font,
+        )
+        self.ax1.set_axis_off()
+        export_controls = self._add_figure_export_bar(
+            right_panel, lambda: self.fig1, "saxsabs_calibration"
+        )
+        self.calibration_export_button = export_controls["button"]
+        self.calibration_export_button.configure(state="disabled")
         self.canvas1 = FigureCanvasTkAgg(self.fig1, master=right_panel)
+        self.toolbar1 = NavigationToolbar2Tk(self.canvas1, right_panel, pack_toolbar=False)
+        self.toolbar1.pack(side="bottom", fill="x", pady=(6, 0))
         self.canvas1.get_tk_widget().pack(fill="both", expand=True)
-        self.toolbar1 = NavigationToolbar2Tk(self.canvas1, right_panel)
         self.toolbar1.update()
         self.add_tooltip(lbl_plot_tip, "tip_t1_plot")
+
+    def _refresh_empty_plot_text(self):
+        if hasattr(self, "_empty_plot_title") and self._empty_plot_title in self.ax1.texts:
+            self._empty_plot_title.set_text(self.tr("plot_empty_title"))
+            self._empty_plot_body.set_text(self.tr("plot_empty_text"))
+            self.canvas1.draw_idle()
 
     # =========================================================================
     # TAB 2: Batch Processing
     # =========================================================================
     def init_tab2_batch(self):
+        self._create_workflow_dock(self.tab2, "t2", self.dry_run, self.run_batch)
         p = self._make_scrollable_frame(self.tab2)
         
         self.t2_files = []
@@ -4843,17 +5012,19 @@ class SAXSAbsWorkbenchApp:
         self.add_hint(c2, "hint_t2_thickness", wraplength=320)
         
         r1 = ttk.Frame(c2)
-        r1.pack(anchor="w")
+        r1.pack(fill="x")
         rb_auto = ttk.Radiobutton(r1, text=self.tr("rb_t2_auto_thk"), variable=self.t2_calc_mode, value="auto")
-        rb_auto.pack(side="left")
+        rb_auto.pack(anchor="w")
         rb_auto.configure(state="disabled")
         self._register_i18n_widget(rb_auto, "rb_t2_auto_thk")
-        lbl_mu = ttk.Label(r1, text=self.tr("lbl_t2_mu"))
+        mu_row = ttk.Frame(r1)
+        mu_row.pack(fill="x", pady=(4, 8))
+        lbl_mu = ttk.Label(mu_row, text=self.tr("lbl_t2_mu"))
         lbl_mu.pack(side="left")
         self._register_i18n_widget(lbl_mu, "lbl_t2_mu")
-        e_mu = ttk.Entry(r1, textvariable=self.t2_mu, width=14, state="readonly")
+        e_mu = ttk.Entry(mu_row, textvariable=self.t2_mu, width=14, state="readonly")
         e_mu.pack(side="left")
-        btn_est = ttk.Button(r1, text=self.tr("btn_t2_mu_est"), command=self.open_mu_tool, width=8)
+        btn_est = ttk.Button(mu_row, text=self.tr("btn_t2_mu_est"), command=self.open_mu_tool, width=8)
         btn_est.pack(side="left", padx=2)
         self._register_i18n_widget(btn_est, "btn_t2_mu_est")
         
@@ -5253,21 +5424,14 @@ class SAXSAbsWorkbenchApp:
         lbl_queue = ttk.Label(mid_frame, textvariable=self.t2_queue_info, style="Hint.TLabel")
         lbl_queue.pack(anchor="w", padx=5, pady=(2, 0))
 
-        self.lb_batch = tk.Listbox(mid_frame, height=8)
-        self.lb_batch.pack(fill="both", expand=True, padx=5, pady=5)
-        self._register_native_widget(self.lb_batch)
+        self.lb_batch = self._make_queue_listbox(mid_frame, height=4)
         self.add_tooltip(self.lb_batch, "tip_t2_listbox")
+        mid_frame.pack_configure(before=top_frame)
 
         # --- Action ---
         bot_frame = ttk.Frame(p)
         bot_frame.pack(fill="x", padx=10, pady=10)
-        btn_run = ttk.Button(bot_frame, text=self.tr("t2_run_btn"), command=self.run_batch, style="PrimaryAction.TButton")
-        self._register_i18n_widget(btn_run, "t2_run_btn")
-        self.t2_run_button = btn_run
-        self.t2_run_button.configure(state="disabled")
-        btn_run.pack(fill="x", ipady=8)  # strongest visual weight — this is the main action for most users
-        self.prog_bar = ttk.Progressbar(bot_frame, mode="determinate")
-        self.prog_bar.pack(fill="x", pady=5)
+        btn_run = self.t2_run_button
         row_out_dir = self.add_dir_row(bot_frame, "lbl_t2_outdir", self.t2_output_root)
         self.add_tooltip(btn_run, "tip_t2_run")
         self.add_tooltip(self.prog_bar, "tip_t2_progress")
@@ -5286,6 +5450,7 @@ class SAXSAbsWorkbenchApp:
         self.t2_sector_save_each.trace_add("write", lambda *_: self.refresh_queue_status())
         self.t2_sector_save_combined.trace_add("write", lambda *_: self.refresh_queue_status())
         self.t2_output_root.trace_add("write", lambda *_: self.refresh_queue_status())
+        self._responsive_cards(top_frame, [(c1, 0, 0, 1), (c2, 0, 1, 1), (c3, 1, 0, 2)])
         self._bind_preflight_invalidation(
             "t2",
             [
@@ -5332,6 +5497,8 @@ class SAXSAbsWorkbenchApp:
     # TAB 3: External 1D -> Absolute Intensity
     # =========================================================================
     def init_tab3_external_1d(self):
+        self._create_workflow_dock(self.tab3, "t3", self.dry_run_external_1d,
+                                   self.run_external_1d_batch)
         p = self._make_scrollable_frame(self.tab3)
 
         self.t3_files = []
@@ -5709,20 +5876,13 @@ class SAXSAbsWorkbenchApp:
         self.add_tooltip(btn_check, "tip_t3_check")
 
         ttk.Label(mid, textvariable=self.t3_queue_info, style="Hint.TLabel").pack(anchor="w", padx=5, pady=(2, 0))
-        self.lb_ext1d = tk.Listbox(mid, height=9)
-        self.lb_ext1d.pack(fill="both", expand=True, padx=5, pady=5)
-        self._register_native_widget(self.lb_ext1d)
+        self.lb_ext1d = self._make_queue_listbox(mid, height=4)
         self.add_tooltip(self.lb_ext1d, "tip_t3_listbox")
+        mid.pack_configure(before=top)
 
         bot = ttk.Frame(p)
         bot.pack(fill="x", padx=10, pady=10)
-        btn_run = ttk.Button(bot, text=self.tr("t3_run_btn"), command=self.run_external_1d_batch, style="PrimaryAction.TButton")
-        self._register_i18n_widget(btn_run, "t3_run_btn")
-        self.t3_run_button = btn_run
-        self.t3_run_button.configure(state="disabled")
-        btn_run.pack(fill="x", ipady=7)
-        self.t3_prog_bar = ttk.Progressbar(bot, mode="determinate")
-        self.t3_prog_bar.pack(fill="x", pady=5)
+        btn_run = self.t3_run_button
         row_out_dir = self.add_dir_row(bot, "lbl_t3_outdir", self.t3_output_root)
         ttk.Label(bot, textvariable=self.t3_out_hint, style="Hint.TLabel").pack(anchor="w")
         self.add_tooltip(btn_run, "tip_t3_run")
@@ -5790,6 +5950,8 @@ class SAXSAbsWorkbenchApp:
                 disable_raw_controls(child)
 
         disable_raw_controls(c3)
+        self._collapse_section(c3)
+        self._responsive_cards(top, [(c1, 0, 0, 1), (c2, 0, 1, 1), (c3, 1, 0, 2)])
         self.refresh_external_1d_status()
 
     def add_external_1d_files(self):
@@ -8960,6 +9122,9 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
             )
             self.ax1.set_title(f"K={k_val:.2f}")
             self.canvas1.draw()
+            export_button = getattr(self, "calibration_export_button", None)
+            if export_button is not None:
+                export_button.configure(state="normal")
             
             # Save check file with error bars using a run id to avoid overwriting
             # previous calibration evidence.
@@ -9321,43 +9486,42 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         txt.insert(tk.END, df[show_cols].to_string(index=False))
 
     def report(self, msg):
+        line = self._localize_runtime_text(msg)
         if hasattr(self, "txt_report"):
-            line = self._localize_runtime_text(msg)
             # Semantic tag highlighting in report text widget
             tag = None
             msg_lower = msg.lower()
             if any(kw in msg_lower for kw in ("error", "fail", "失败", "错误", "blocked")):
                 tag = "error"
-            elif any(kw in msg_lower for kw in ("success", "done", "完成", "成功", "ready")):
-                tag = "success"
             elif any(kw in msg_lower for kw in ("warning", "caution", "注意", "警告")):
                 tag = "warning"
+            elif any(kw in msg_lower for kw in ("success", "done", "完成", "成功", "ready")):
+                tag = "success"
             elif "k-factor" in msg_lower or "k factor" in msg_lower or "k 因子" in msg_lower:
                 tag = "kfactor"  # special prominent tag for the most important number
-            start_idx = self.txt_report.index(tk.END)
-            self.txt_report.insert(tk.END, line + "\n")
+            start_idx = self.txt_report.index("end-1c")
+            self.txt_report.configure(state="normal")
+            try:
+                self.txt_report.insert(tk.END, line + "\n")
+            finally:
+                self.txt_report.configure(state="disabled")
             if tag:
                 end_idx = self.txt_report.index(tk.END)
                 self.txt_report.tag_add(tag, start_idx, end_idx)
             self.txt_report.see(tk.END)
         # Mirror last message to status bar with semantic colour
         if hasattr(self, "_status_bar"):
-            short = msg.strip()[:120]
+            short = line.strip()[:120]
             self._status_var.set(short)
             msg_lower = msg.lower()
             if any(kw in msg_lower for kw in ("error", "fail", "失败", "错误", "blocked")):
-                self._status_bar.configure(foreground="#dc2626")
-            elif any(kw in msg_lower for kw in ("success", "done", "完成", "成功", "ready")):
-                self._status_bar.configure(foreground="#16a34a")
+                self._status_bar.configure(foreground=self._ui_colors["error"])
             elif any(kw in msg_lower for kw in ("warning", "caution", "注意", "警告")):
-                self._status_bar.configure(foreground="#d97706")
+                self._status_bar.configure(foreground=self._ui_colors["warning"])
+            elif any(kw in msg_lower for kw in ("success", "done", "完成", "成功", "ready")):
+                self._status_bar.configure(foreground=self._ui_colors["success"])
             else:
-                try:
-                    import sv_ttk as _sv
-                    _hint_fg = "#9ca3af" if _sv.get_theme() == "dark" else "#6b7280"
-                except Exception:
-                    _hint_fg = "#6b7280"
-                self._status_bar.configure(foreground=_hint_fg)
+                self._status_bar.configure(foreground=self._ui_colors["muted"])
 
     def log(self, msg):
         print(msg)
@@ -11338,6 +11502,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         setattr(self, f"{tab}_preflight_approval", None)
         setattr(self, f"{tab}_preflight_fingerprint", None)
         setattr(self, f"{tab}_preflight_level", None)
+        self._update_workflow_display(tab, "unchecked")
         button = getattr(self, f"{tab}_run_button", None)
         if button is not None:
             try:
@@ -11349,6 +11514,8 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         """Record a small, testable lifecycle state for a Tab 2/3 job."""
         normalized_state = str(state)
         setattr(self, f"{tab}_job_status", normalized_state)
+        if normalized_state in {"running", "completed", "failed"}:
+            self._update_workflow_display(tab, normalized_state)
         if normalized_state in {"running", "completed", "failed"}:
             self._workbench_last_job_tab = tab
         status_keys = {
@@ -11423,6 +11590,7 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         setattr(self, f"{tab}_preflight_approval", approval)
         setattr(self, f"{tab}_preflight_fingerprint", approval.fingerprint)
         setattr(self, f"{tab}_preflight_level", approval.level)
+        self._update_workflow_display(tab, str(approval.level))
         button = getattr(self, f"{tab}_run_button", None)
         if button is not None:
             try:
@@ -12637,11 +12805,14 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
         display_text = self.tr(key) if key else label_text
         f = ttk.Frame(p)
         f.pack(fill="x", pady=3)
-        lbl = ttk.Label(f, text=display_text, width=18, anchor="e", justify="right", wraplength=150)
-        lbl.pack(side="left", padx=(0, 6))
+        lbl = ttk.Label(f, text=display_text, anchor="w", justify="left")
+        lbl.pack(fill="x", pady=(0, 3))
+        self._wrap_label(lbl)
+        input_row = ttk.Frame(f)
+        input_row.pack(fill="x")
         if key:
             self._register_i18n_widget(lbl, key)
-        ent = ttk.Entry(f, textvariable=v)
+        ent = ttk.Entry(input_row, textvariable=v)
         ent.pack(side="left", fill="x", expand=True, padx=(0, 4))
         def b():
             fp = filedialog.askopenfilename(filetypes=[("File", pat)])
@@ -12649,30 +12820,33 @@ For advanced details, keep the Chinese help mode or refer to repository docs.
                 v.set(fp)
                 if cmd:
                     cmd(fp)
-        btn = ttk.Button(f, text="...", width=3, command=b)
+        btn = ttk.Button(input_row, text="…", width=3, command=b)
         btn.pack(side="left")
         self.add_tooltip(btn, "tip_browse_file")
-        return {"frame": f, "label": lbl, "entry": ent, "button": btn}
+        return {"frame": f, "input_row": input_row, "label": lbl, "entry": ent, "button": btn}
 
     def add_dir_row(self, p, label_text, v, label_key=None):
         key = label_key or (label_text if label_text in I18N.get("en", {}) else None)
         display_text = self.tr(key) if key else label_text
         f = ttk.Frame(p)
         f.pack(fill="x", pady=3)
-        lbl = ttk.Label(f, text=display_text, width=18, anchor="e", justify="right", wraplength=150)
-        lbl.pack(side="left", padx=(0, 6))
+        lbl = ttk.Label(f, text=display_text, anchor="w", justify="left")
+        lbl.pack(fill="x", pady=(0, 3))
+        self._wrap_label(lbl)
+        input_row = ttk.Frame(f)
+        input_row.pack(fill="x")
         if key:
             self._register_i18n_widget(lbl, key)
-        ent = ttk.Entry(f, textvariable=v)
+        ent = ttk.Entry(input_row, textvariable=v)
         ent.pack(side="left", fill="x", expand=True, padx=(0, 4))
         def b():
             dp = filedialog.askdirectory()
             if dp:
                 v.set(dp)
-        btn = ttk.Button(f, text="...", width=3, command=b)
+        btn = ttk.Button(input_row, text="…", width=3, command=b)
         btn.pack(side="left")
         self.add_tooltip(btn, "tip_browse_dir")
-        return {"frame": f, "label": lbl, "entry": ent, "button": btn}
+        return {"frame": f, "input_row": input_row, "label": lbl, "entry": ent, "button": btn}
 
     def add_grid_entry(self, p, v, r, c):
         e = ttk.Entry(p, textvariable=v, width=8, justify="center")

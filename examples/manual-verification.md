@@ -99,6 +99,28 @@ Use anonymized or synthetic files for this UI check. It verifies the controls
 that are implemented now; it does not certify the Workbench as an equivalent
 front end to the strict BL19B2 campaign runner.
 
+On Windows, the desktop interface can be exercised without taking focus from
+the user's desktop:
+
+```powershell
+py -3.13 scripts/check_workbench_ui.py --synthetic-run --context-help
+```
+
+The script creates an isolated Windows desktop, captures only the application
+window, and writes screenshots and `report.json` under `.audit-work/ui/`.
+It checks 900 × 600 and 1280 × 800 windows, English and Chinese labels, both
+themes, all four pages, persistent processing controls, scrolling, and preflight
+invalidation. The synthetic 1D run loads a source-verified synthetic calibration
+record, completes the actual preflight and processing actions, and checks output
+intensity, uncertainty, units, and correction history. These checks establish
+software behavior, not experimental calibration accuracy. The script deliberately
+fails before creating Tk windows if desktop isolation is unavailable.
+
+The calibration page separates the plot and activity report into two tabs.
+The detector and external-profile pages provide **View report** alongside their
+persistent **Preflight** and **Start processing** controls. Hover over a control,
+or select it with Tab and press F1, to read its help; Esc closes the help.
+
 1. Launch the Workbench on a compact desktop (1024 x 700 is the minimum test
    viewport). Confirm the initial window fits the usable screen, the minimum is
    `900 x 600`, and Tab 2/Tab 3 remain vertically scrollable.

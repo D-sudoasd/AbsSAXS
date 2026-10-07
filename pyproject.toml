@@ -69,7 +69,7 @@ Changelog = "https://github.com/D-sudoasd/AbsSAXS/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 package-dir = {"" = ".", "saxsabs" = "src/saxsabs"}
-py-modules = ["SASAbs", "saxs_mpl_style"]
+py-modules = ["SASAbs", "saxs_mpl_style", "saxs_gui_help"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
