@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/readme/saxsabs-overview.png" width="100%" alt="Conceptual illustration of SAXS absolute-intensity calibration; this artwork is not an experimental measurement.">
+</p>
+
 # AbsSAXS
 
 **将相对 SAXS 强度标定为绝对强度，同时保留监测计数、透射率、厚度和处理记录。**
