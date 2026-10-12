@@ -26,7 +26,8 @@ python -m pip install -e ".[dev]"
 python scripts/select_checks.py --full
 ```
 
-The `dev` extra installs pytest, Ruff, and development dependencies. To run the
+The `dev` extra installs pytest, Ruff, psutil for batch resource measurements,
+and development dependencies. To run the
 same optional workflows installed in continuous integration, install all
 supported extras:
 

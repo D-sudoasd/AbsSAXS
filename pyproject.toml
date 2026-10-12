@@ -48,6 +48,7 @@ bl19b2 = [
 ]
 dev = [
   "matplotlib>=3.7",
+  "psutil>=5.9",
   "PyYAML>=6.0",
   "pytest>=8.0",
   "ruff>=0.5",

@@ -224,6 +224,19 @@ finite unmasked values, and the embedded K uncertainty contract. A mismatch,
 unreadable file, or incomplete output set blocks the run instead of overwriting
 scientific outputs silently.
 
+Current runs lock the package against concurrent writers. Each frame is staged
+before its sidecar is published; interrupted journaled writes are recovered on
+the next run with the same inputs and processing signature. Partial or
+interrupted 2D runs retain `.saxsabs-incomplete`, which blocks downstream 1D
+integration until the 2D run completes. Keep the persistent `.saxsabs.lock` file;
+the OS releases its lock automatically when the process exits.
+
+Required previews are verified and repaired from the already verified HDF5
+image when missing, damaged or lacking a legacy content checksum. Existing
+unjournaled incomplete scientific outputs still fail closed. See
+[measured performance and recovery evidence](bl19b2-performance.md) for complete
+delivery timings, the one-time legacy preview migration cost and validation limits.
+
 ## Reuse Command
 
 For a new beamtime, copy `examples/bl19b2_abs2d_template/processing_config.example.yml`
