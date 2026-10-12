@@ -17,6 +17,46 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def test_integration_refuses_interrupted_2d_package(tmp_path):
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / ".saxsabs-incomplete").write_text("interrupted 2D\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="resume the 2D workflow first"):
+        integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(package))
+    assert not (package / "integration").exists()
+
+
+def test_preview_repair_does_not_invalidate_scientific_resume_signature():
+    metadata = {"outputs": {"edf_sha256": "detector bytes"}, "uncertainty": "partial"}
+    expected = integration._metadata_scientific_sha256(metadata)
+    metadata["outputs"]["preview_sha256"] = "new display bytes"
+    assert integration._metadata_scientific_sha256(metadata) == expected
+    metadata["outputs"]["edf_sha256"] = "different detector bytes"
+    assert integration._metadata_scientific_sha256(metadata) != expected
+
+
+def test_integration_recovers_interrupted_bootstrap_and_profile_write(tmp_path, monkeypatch):
+    package, _manifest = _build_package(tmp_path)
+    ai = SimpleNamespace(integrate1d=lambda image, npt, **kwargs: SimpleNamespace(
+        radial=np.linspace(0.001, 1.0, npt), intensity=np.linspace(2.0, 3.0, npt)
+    ))
+    monkeypatch.setattr(integration, "_load_integrator", lambda _path: ai)
+    monkeypatch.setattr(integration, "_load_validate_edf", lambda *args: np.ones((2, 2)))
+    out = package / "integration"
+    bootstrap = out / "config" / ".run_signature.json.tmp"
+    bootstrap.parent.mkdir(parents=True)
+    bootstrap.write_bytes(b"interrupted private write")
+    first = integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(package))
+    assert first["processed"] == 1
+    profile = next((out / "profiles").rglob("*.csv"))
+    temporary = profile.with_name(f".{profile.name}.tmp")
+    temporary.write_bytes(b"stale write")
+    second = integration.run_bl19b2_integrate1d(integration.Integrate1DConfig(package))
+    assert second["skipped"] == 1
+    assert not temporary.exists()
+    assert not (out / ".saxsabs-incomplete").exists()
+
+
 def _build_package(
     tmp_path: Path,
     *,

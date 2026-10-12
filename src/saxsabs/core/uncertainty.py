@@ -168,16 +168,23 @@ def propagate_absolute_uncertainty(
         mu,
         alpha,
     )
-    component_squares: list[np.ndarray] = []
+    # Accumulate in component order without materializing two stacked copies of
+    # every detector-sized variance array. Unknown pixels still invalidate the
+    # combined result, while known components must still pass the overflow gate.
+    known_square_sum = np.zeros(shape, dtype=np.float64)
+    unknown_pixels = np.zeros(shape, dtype=bool)
     for component in components:
         with np.errstate(over="ignore", invalid="ignore"):
             squared = np.square(component)
         if np.any(np.isinf(squared)):
             raise ValueError("combined standard uncertainty propagation overflowed")
-        component_squares.append(squared)
+        missing = np.isnan(squared)
+        unknown_pixels |= missing
+        with np.errstate(over="ignore", invalid="ignore"):
+            np.add(known_square_sum, squared, out=known_square_sum, where=~missing)
     with np.errstate(over="ignore", invalid="ignore"):
-        combined = np.sqrt(np.sum(component_squares, axis=0))
-        known_square_sum = np.nansum(component_squares, axis=0)
+        combined = np.sqrt(known_square_sum)
+    combined[unknown_pixels] = np.nan
     if np.any(np.isinf(known_square_sum)):
         raise ValueError("combined standard uncertainty propagation overflowed")
     if np.any(np.isinf(combined)):

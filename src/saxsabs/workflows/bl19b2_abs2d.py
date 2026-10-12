@@ -32,6 +32,7 @@ from saxsabs.core.normalization import compute_norm_factor as _core_compute_norm
 from saxsabs.core.uncertainty import AbsoluteUncertaintyBudget, propagate_absolute_uncertainty
 from saxsabs.constants import get_reference_data
 from saxsabs.io.detector_images import load_detector_image, load_detector_pixels
+from saxsabs.workflows._output_lock import output_lock
 
 
 SCHEMA_VERSION = "saxsabs.bl19b2_abs2d.v4"
@@ -1584,12 +1585,12 @@ def compute_bl19b2_uncertainty_budget(
     )
     if not np.any(masked):
         return budget
-    masked_components: dict[str, np.ndarray] = {}
+    # The core returns newly owned component arrays. Zero their masked pixels
+    # directly instead of retaining another complete detector-sized budget.
     for attribute in _UNCERTAINTY_DATASETS.values():
-        values = np.asarray(getattr(budget, attribute), dtype=np.float64).copy()
+        values = getattr(budget, attribute)
         values[masked] = 0.0
-        masked_components[attribute] = values
-    return replace(budget, **masked_components)
+    return budget
 
 
 def _require_close(
@@ -3711,6 +3712,9 @@ def write_hdf5_image(
             coverage_factor=None,
         )
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Sequential full-frame delivery benefits from fewer, larger chunks. Keep
+    # portable, lossless gzip and all float32/float64 values and NaN payloads.
+    chunks = tuple(min(size, limit) for size, limit in zip(image.shape, (128, 256)))
     with h5py.File(str(path), "w") as f:
         entry = f.create_group("entry")
         entry.attrs["NX_class"] = "NXentry"
@@ -3740,8 +3744,9 @@ def write_hdf5_image(
             "I_abs_2d",
             data=image,
             compression="gzip",
-            compression_opts=4,
+            compression_opts=1,
             shuffle=True,
+            chunks=chunks,
         )
         ds.attrs["units"] = INTENSITY_UNIT
         ds.attrs["sha256"] = str(metadata.get("output_image", {}).get("sha256", ""))
@@ -3773,8 +3778,9 @@ def write_hdf5_image(
                 dataset_name,
                 data=values,
                 compression="gzip",
-                compression_opts=4,
+                compression_opts=1,
                 shuffle=True,
+                chunks=chunks,
             )
             uncertainty_ds.attrs["units"] = INTENSITY_UNIT
         entry.create_dataset("metadata_json", data=json.dumps(_json_safe(metadata), ensure_ascii=False))
@@ -3850,6 +3856,7 @@ def write_preview_png(
     image: np.ndarray,
     *,
     detector_mask: np.ndarray | None = None,
+    intensity_limits: tuple[float, float] | None = None,
 ) -> bool:
     try:
         import matplotlib
@@ -3864,7 +3871,11 @@ def write_preview_png(
     finite = image[finite_pixels]
     if finite.size == 0:
         return False
-    lo, hi = np.nanpercentile(finite, [1.0, 99.5])
+    lo, hi = (
+        np.nanpercentile(finite, [1.0, 99.5])
+        if intensity_limits is None
+        else intensity_limits
+    )
     if not np.isfinite(lo) or not np.isfinite(hi) or lo >= hi:
         lo = float(np.nanmin(finite))
         hi = float(np.nanmax(finite))
@@ -3900,15 +3911,16 @@ def _qc_stats(
             "p50": None,
             "p995": None,
         }
+    p01, p50, p995 = np.nanpercentile(finite, [1.0, 50.0, 99.5])
     return {
         "finite_fraction": float(finite.size / valid_pixel_count),
         "negative_fraction": float(np.sum(finite < 0) / finite.size),
         "min": float(np.nanmin(finite)),
         "max": float(np.nanmax(finite)),
         "mean": float(np.nanmean(finite)),
-        "p01": float(np.nanpercentile(finite, 1.0)),
-        "p50": float(np.nanpercentile(finite, 50.0)),
-        "p995": float(np.nanpercentile(finite, 99.5)),
+        "p01": float(p01),
+        "p50": float(p50),
+        "p995": float(p995),
     }
 
 
@@ -4011,7 +4023,7 @@ def _resolve_generated_output_path(
     return resolved
 
 
-def _validate_existing_outputs(paths: OutputPaths, metadata: dict[str, Any]) -> None:
+def _validate_existing_outputs(paths: OutputPaths, metadata: dict[str, Any]) -> np.ndarray:
     package_root = _package_root_from_output_paths(paths)
     outputs = metadata.get("outputs", {})
     external_k_contract = _k_calibration_contract(
@@ -4208,6 +4220,7 @@ def _validate_existing_outputs(paths: OutputPaths, metadata: dict[str, Any]) -> 
         label="EDF",
         package_root=package_root,
     )
+    return h5_image
 
 
 def _validate_metadata_processing_signature(metadata: dict[str, Any]) -> None:
@@ -4256,6 +4269,7 @@ def _frame_qc_row_from_metadata(
     rel: Path,
     paths: OutputPaths,
     expected_signature: str | None = None,
+    require_preview: bool = False,
 ) -> dict[str, Any]:
     try:
         metadata = json.loads(paths.metadata.read_text(encoding="utf-8"))
@@ -4293,7 +4307,7 @@ def _frame_qc_row_from_metadata(
     )
     if metadata.get("frame_signature") != expected_frame_signature:
         raise ValueError(f"existing BL19B2 output frame signature mismatch for {rel}")
-    _validate_existing_outputs(paths, metadata)
+    verified_image = _validate_existing_outputs(paths, metadata)
     package_root = _package_root_from_output_paths(paths)
     outputs = metadata.get("outputs", {})
     qc = metadata.get("qc", {})
@@ -4307,6 +4321,44 @@ def _frame_qc_row_from_metadata(
     preview_path = Path(raw_preview)
     if not preview_path.is_absolute():
         preview_path = package_root / preview_path
+    if require_preview:
+        _resolve_generated_output_path(
+            str(preview_path), package_root=package_root, expected=paths.preview, label="preview"
+        )
+        preview_valid = preview_path.is_file()
+        if preview_valid:
+            try:
+                from PIL import Image
+
+                with Image.open(preview_path) as preview_image:
+                    preview_image.verify()
+                preview_sha = metadata.get("outputs", {}).get("preview_sha256")
+                # Legacy previews have no content binding. Rebuild them once
+                # from verified pixels before recording a reusable checksum.
+                preview_valid = bool(preview_sha) and _file_sha256(preview_path) == preview_sha
+            except (OSError, ValueError):
+                preview_valid = False
+        if not preview_valid:
+            mask_path = Path(str(mask.get("npy", "")))
+            if not mask_path.is_absolute():
+                mask_path = package_root / mask_path
+            temporary = _staged_frame_path(preview_path)
+            if not write_preview_png(
+                temporary,
+                verified_image,
+                detector_mask=np.load(mask_path, allow_pickle=False),
+                intensity_limits=(qc["p01"], qc["p995"]),
+            ):
+                raise ValueError(f"required preview could not be regenerated for {rel}")
+            temporary.replace(preview_path)
+            metadata["outputs"]["preview_sha256"] = _file_sha256(preview_path)
+            metadata_stage = _staged_frame_path(paths.metadata)
+            _write_json(metadata_stage, metadata)
+            metadata_stage.replace(paths.metadata)
+        # A previous preview repair may have been interrupted before replacing
+        # its final file. The verified final pair makes these private stages obsolete.
+        _staged_frame_path(paths.preview).unlink(missing_ok=True)
+        _staged_frame_path(paths.metadata).unlink(missing_ok=True)
     preview = str(preview_path)
     if not preview_path.exists():
         preview = ""
@@ -4571,6 +4623,64 @@ PNG previews are for inspection only and are not scientific data.
     (out_root / "README.md").write_text(text, encoding="utf-8")
 
 
+def _staged_frame_path(path: Path) -> Path:
+    return path.with_name(f".saxsabs-stage-{path.name}")
+
+
+def _frame_journal_path(paths: OutputPaths) -> Path:
+    return paths.metadata.with_name(f".saxsabs-pending-{paths.metadata.name}")
+
+
+def _frame_members(paths: OutputPaths, write_preview: bool) -> dict[str, Path]:
+    members = {"hdf5": paths.h5, "edf": paths.edf}
+    if write_preview:
+        members["preview"] = paths.preview
+    # The sidecar is the commit record and is always published last.
+    members["metadata"] = paths.metadata
+    return members
+
+
+def _recover_frame_publication(
+    paths: OutputPaths, *, source: Path, processing_signature: str
+) -> None:
+    """Recover only this workflow's journaled writes, under the package lock."""
+    journal_path = _frame_journal_path(paths)
+    if not journal_path.exists():
+        return
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    if journal.get("processing_signature") != processing_signature:
+        raise ValueError(f"interrupted frame processing signature mismatch: {source}")
+    members = _frame_members(paths, bool(journal["write_preview"]))
+    if journal["state"] == "writing":
+        # Publication has not begun. Retain all existing final outputs.
+        for target in members.values():
+            _staged_frame_path(target).unlink(missing_ok=True)
+        journal_path.unlink()
+        return
+    if journal["state"] != "prepared" or set(journal["sha256"]) != set(members):
+        raise ValueError(f"invalid interrupted frame journal: {journal_path}")
+    metadata_stage = _staged_frame_path(paths.metadata)
+    metadata_path = metadata_stage if metadata_stage.exists() else paths.metadata
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("source_identity") != _source_identity(source):
+        raise ValueError(f"interrupted frame source identity mismatch: {source}")
+    # Verify the whole prepared set before moving any member. A crash can leave
+    # some members at their final paths and the remainder in staging.
+    for name, target in members.items():
+        staged = _staged_frame_path(target)
+        candidate = staged if staged.exists() else target
+        if candidate.is_symlink() or _file_sha256(candidate) != journal["sha256"][name]:
+            raise ValueError(f"interrupted frame checksum mismatch: {candidate}")
+        if staged.exists() and target.exists() and not journal.get("overwrite", False):
+            if _file_sha256(target) != journal["sha256"][name]:
+                raise FileExistsError(f"unexpected existing output during frame recovery: {target}")
+    for target in members.values():
+        staged = _staged_frame_path(target)
+        if staged.exists():
+            staged.replace(target)
+    journal_path.unlink()
+
+
 def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
     """Run BL19B2 scan and optional absolute corrected 2D export."""
     validate_config(config)
@@ -4609,6 +4719,28 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
             "background": capture_detector_source(reference_paths.background),
             "standard": capture_detector_source(reference_paths.standard),
         }
+
+    with output_lock(out_root):
+        incomplete = out_root / ".saxsabs-incomplete"
+        incomplete.write_text("2D publication in progress; resume required\n", encoding="utf-8")
+        result = _run_bl19b2_abs2d_locked(
+            config, control_inputs, reference_paths, inventory_rows, sample_paths, reference_sources
+        )
+        if result["status"] in {"complete", "dry-run"}:
+            incomplete.unlink()
+        return result
+
+
+def _run_bl19b2_abs2d_locked(
+    config: BL19B2Abs2DConfig,
+    control_inputs: RunControlInputs,
+    reference_paths: ReferencePaths,
+    inventory_rows: list[dict[str, Any]],
+    sample_paths: list[Path],
+    reference_sources: dict[str, DetectorSourceSnapshot] | None,
+) -> dict[str, Any]:
+    input_root = Path(config.input_root)
+    out_root = config.resolved_output_root()
 
     _ensure_output_dirs(out_root)
     config, control_inputs = _copy_run_control_inputs(config, control_inputs)
@@ -4772,6 +4904,7 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
     for source in valid_samples:
         rel = source.relative_to(input_root)
         paths = build_output_paths(source, input_root=input_root, output_root=out_root)
+        _recover_frame_publication(paths, source=source, processing_signature=processing_signature)
         if (
             paths.h5.exists()
             and paths.edf.exists()
@@ -4783,6 +4916,7 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
                 rel=rel,
                 paths=paths,
                 expected_signature=processing_signature,
+                require_preview=config.write_preview,
             )
             update_metadata_provenance(
                 paths.metadata,
@@ -4959,18 +5093,52 @@ def run_bl19b2_abs2d(config: BL19B2Abs2DConfig) -> dict[str, Any]:
                 uncertainty_budget=uncertainty_budget,
                 control_inputs=control_inputs,
             )
-            write_hdf5_image(paths.h5, image_out, metadata, uncertainty_budget)
-            write_edf_image(paths.edf, image_out, metadata)
-            metadata["outputs"]["hdf5_sha256"] = _file_sha256(paths.h5)
-            metadata["outputs"]["edf_sha256"] = _file_sha256(paths.edf)
-            _write_json(paths.metadata, metadata)
+            members = _frame_members(paths, config.write_preview)
+            for target in members.values():
+                target.parent.mkdir(parents=True, exist_ok=True)
+            journal_path = _frame_journal_path(paths)
+            journal = {
+                "processing_signature": processing_signature,
+                "write_preview": config.write_preview,
+                "overwrite": config.overwrite,
+                "state": "writing",
+            }
+            journal_stage = _staged_frame_path(journal_path)
+            _write_json(journal_stage, journal)
+            journal_stage.replace(journal_path)
+            write_hdf5_image(_staged_frame_path(paths.h5), image_out, metadata, uncertainty_budget)
+            write_edf_image(_staged_frame_path(paths.edf), image_out, metadata)
+            metadata["outputs"]["hdf5_sha256"] = _file_sha256(_staged_frame_path(paths.h5))
+            metadata["outputs"]["edf_sha256"] = _file_sha256(_staged_frame_path(paths.edf))
             preview_written = False
             if config.write_preview:
                 preview_written = write_preview_png(
-                    paths.preview,
+                    _staged_frame_path(paths.preview),
                     image_out,
                     detector_mask=mask_info.mask,
+                    intensity_limits=(qc["p01"], qc["p995"]),
                 )
+                if not preview_written:
+                    raise ValueError(f"required preview could not be written for {rel}")
+                metadata["outputs"]["preview_sha256"] = _file_sha256(
+                    _staged_frame_path(paths.preview)
+                )
+            _write_json(_staged_frame_path(paths.metadata), metadata)
+            journal["state"] = "prepared"
+            journal["sha256"] = {
+                name: metadata["outputs"][f"{name}_sha256"]
+                if name in {"hdf5", "edf"}
+                else _file_sha256(_staged_frame_path(target))
+                for name, target in members.items()
+            }
+            # Atomic journal replacement makes an interrupted commit recoverable.
+            _write_json(journal_stage, journal)
+            journal_stage.replace(journal_path)
+            for target in members.values():
+                if target.exists() and not config.overwrite:
+                    raise FileExistsError(f"unexpected existing output during publication: {target}")
+                _staged_frame_path(target).replace(target)
+            journal_path.unlink()
 
             row = {
                 "relative_path": str(rel),

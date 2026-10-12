@@ -9,6 +9,38 @@ from saxsabs.core.uncertainty import (
 )
 
 
+@pytest.mark.parametrize("shape", [(1,), (17,), (7, 11)])
+@pytest.mark.parametrize("partial", [False, True])
+def test_variance_accumulation_preserves_reference_reduction(shape, partial):
+    rng = np.random.default_rng(218)
+    statistical = rng.uniform(0.0, 3.0, size=shape)
+    if partial:
+        statistical.flat[-1] = np.nan
+    budget = propagate_absolute_uncertainty(
+        rng.uniform(-10.0, 10.0, size=shape),
+        statistical_standard_uncertainty=statistical,
+        k_relative_standard_uncertainty=0.1,
+        standard_relative_standard_uncertainty=0.02,
+        transmission_relative_standard_uncertainty=0.03,
+        monitor_relative_standard_uncertainty=0.04,
+        thickness_relative_standard_uncertainty=0.05,
+        mu_relative_standard_uncertainty=0.06,
+        alpha_standard_uncertainty=0.0,
+        coverage_factor=2.0,
+    )
+    components = [getattr(budget, name) for name in (
+        "statistical", "k", "standard", "transmission", "monitor", "thickness", "mu", "alpha"
+    )]
+    expected = np.sqrt(np.sum([np.square(value) for value in components], axis=0))
+    np.testing.assert_allclose(
+        budget.combined_standard_uncertainty, expected, rtol=5e-16, atol=0, equal_nan=True
+    )
+    np.testing.assert_allclose(
+        budget.expanded_uncertainty, expected * 2, rtol=5e-16, atol=0, equal_nan=True
+    )
+    np.testing.assert_array_equal(statistical, components[0])
+
+
 def test_complete_budget_keeps_components_and_combines_independent_variances():
     budget = propagate_absolute_uncertainty(
         intensity=np.array([10.0, 20.0]),

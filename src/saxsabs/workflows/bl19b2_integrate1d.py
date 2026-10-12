@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 
 from saxsabs.io.detector_images import load_detector_image, load_detector_pixels
+from saxsabs.workflows._output_lock import output_lock
 
 
 SCHEMA_VERSION = "saxsabs.bl19b2_integrate1d.v1"
@@ -101,6 +102,12 @@ def _canonical_hash(payload: dict[str, Any]) -> str:
 def _metadata_scientific_sha256(metadata: dict[str, Any]) -> str:
     scientific = dict(metadata)
     scientific.pop("last_resume_validation", None)
+    # Repairing a display-only preview cannot invalidate an already verified
+    # absolute 1D profile. Keep all detector and scientific metadata bound.
+    if isinstance(scientific.get("outputs"), dict):
+        outputs = dict(scientific["outputs"])
+        outputs.pop("preview_sha256", None)
+        scientific["outputs"] = outputs
     return _canonical_hash(scientific)
 
 
@@ -270,15 +277,24 @@ def _json_bytes(payload: dict[str, Any]) -> bytes:
     return (json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
 
 
+def _discard_interrupted_write(path: Path) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    if temporary.exists():
+        # All calls are protected by the package lock. This is an interrupted
+        # private write, never a published scientific output.
+        if temporary.is_symlink() or not temporary.is_file():
+            raise FileExistsError(f"invalid temporary integration artifact: {temporary}")
+        temporary.unlink()
+
+
 def _write_new_or_verify(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    _discard_interrupted_write(path)
+    temporary = path.with_name(f".{path.name}.tmp")
     if path.exists():
         if not path.is_file() or path.read_bytes() != data:
             raise ValueError(f"existing integration artifact differs; refusing overwrite: {path}")
         return
-    temporary = path.with_name(f".{path.name}.tmp")
-    if temporary.exists():
-        raise FileExistsError(f"stale temporary integration artifact: {temporary}")
     temporary.write_bytes(data)
     temporary.replace(path)
 
@@ -618,6 +634,14 @@ def _table_bytes(header: list[str], columns: list[np.ndarray]) -> bytes:
 def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
     """Integrate every successful EDF named by one package's 2D manifest."""
     package = Path(config.package_root).resolve(strict=True)
+    with output_lock(package):
+        if (package / ".saxsabs-incomplete").exists():
+            raise ValueError("2D publication was interrupted; resume the 2D workflow first")
+        return _run_bl19b2_integrate1d_locked(config)
+
+
+def _run_bl19b2_integrate1d_locked(config: Integrate1DConfig) -> dict[str, Any]:
+    package = Path(config.package_root).resolve(strict=True)
     if config.npt != 5500 or config.unit != "q_A^-1" or config.method.casefold() != "csr":
         raise ValueError("BL19B2 production integration requires 5500 q_A^-1 points with CSR")
     manifest, manifest_bytes, items = _read_manifest(config)
@@ -707,6 +731,9 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
     existing_files = list(out.rglob("*")) if out.exists() else []
     existing_files = [path for path in existing_files if path.is_file()]
     signature_file = out / "config" / "run_signature.json"
+    incomplete = out / ".saxsabs-incomplete"
+    bootstrap = signature_file.with_name(f".{signature_file.name}.tmp")
+    existing_files = [path for path in existing_files if path not in {incomplete, bootstrap}]
     manifest_snapshot = out / "manifests" / "input_2d_processing_manifest.csv"
     selection_snapshot = out / "manifests" / "input_2d_selection.json"
     if existing_files and not config.resume:
@@ -717,8 +744,11 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
         raise ValueError("existing integration output has no raw manifest snapshot")
     if existing_files and not selection_snapshot.is_file():
         raise ValueError("existing integration output has no canonical selection snapshot")
+    incomplete.parent.mkdir(parents=True, exist_ok=True)
+    incomplete.write_text("1D publication in progress; resume required\n", encoding="utf-8")
     signature_doc = {"schema": SCHEMA_VERSION, "run_signature": run_signature, "payload": signature_payload}
     _write_new_or_verify(signature_file, _json_bytes(signature_doc))
+    _discard_interrupted_write(manifest_snapshot)
     if manifest_snapshot.exists():
         if not manifest_snapshot.is_file():
             raise ValueError(f"raw manifest snapshot is not a file: {manifest_snapshot}")
@@ -770,6 +800,8 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
         frame_signature = _canonical_hash(frame_payload)
         profile = out / "profiles" / item.relative_path.parent / f"{item.relative_path.stem}_abs1d_cm-1.csv"
         sidecar = out / "metadata" / item.relative_path.parent / f"{item.relative_path.stem}_abs1d.json"
+        _discard_interrupted_write(profile)
+        _discard_interrupted_write(sidecar)
         if sidecar.exists() and not profile.exists():
             raise ValueError(f"incomplete existing 1D output pair for {item.relative_path}")
         if sidecar.exists():
@@ -880,7 +912,9 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
     integration_manifest = out / "manifests" / "integration_manifest.csv"
     _write_new_or_verify(integration_manifest, manifest_buffer.getvalue().encode("utf-8"))
 
-    excluded = {out / "manifests" / "checksums.sha256.csv", out / "config" / "completion.json"}
+    excluded = {
+        out / "manifests" / "checksums.sha256.csv", out / "config" / "completion.json", incomplete
+    }
     artifacts = sorted(path for path in out.rglob("*") if path.is_file() and path not in excluded)
     checksum_buffer = io.StringIO(newline="")
     checksum_writer = csv.writer(checksum_buffer, lineterminator="\n")
@@ -901,6 +935,7 @@ def run_bl19b2_integrate1d(config: Integrate1DConfig) -> dict[str, Any]:
         "checksums_manifest_sha256": _sha256_bytes(checksum_data),
     }
     _write_new_or_verify(out / "config" / "completion.json", _json_bytes(completion))
+    incomplete.unlink()
     return {
         "status": "complete",
         "package_root": str(package),
