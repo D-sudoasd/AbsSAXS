@@ -185,7 +185,14 @@ def test_child_failure_produces_failed_evidence_and_nonzero_exit(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
     source_root = tmp_path / "source"
-    (source_root / "src" / "saxsabs").mkdir(parents=True)
+    package = source_root / "src" / "saxsabs"
+    package.mkdir(parents=True)
+    # An empty namespace can pick up an editable installation from site-packages.
+    # Fail explicitly so the child exercises the same error path in clean CI and locally.
+    (package / "__init__.py").write_text(
+        "raise ModuleNotFoundError('intentional benchmark child import failure')\n",
+        encoding="utf-8",
+    )
     input_root = tmp_path / "raw"
     input_root.mkdir()
     config_path = tmp_path / "config.json"
@@ -214,5 +221,7 @@ def test_child_failure_produces_failed_evidence_and_nonzero_exit(
     assert report["status"] == "failed"
     assert report["child_return_code"] != 0
     assert report["child_result"]["status"] == "failed"
-    assert "ModuleNotFoundError" in report["child_result"]["error"]
+    assert report["child_result"]["error"] == (
+        "ModuleNotFoundError: intentional benchmark child import failure"
+    )
     assert Path(report["stderr_log"]).is_file()
